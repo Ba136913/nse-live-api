@@ -5,7 +5,7 @@ import uvicorn
 
 app = FastAPI()
 
-# CORS Middleware taaki GitHub wali website isse baat kar sake
+# CORS Middleware (bohot zaroori hai taaki GitHub wali website isse data le sake)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,14 +14,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Common headers
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': '*/*',
     'Accept-Language': 'en-US,en;q=0.9'
 }
 
-# --- 1. GAINERS & LOSERS API ---
+# --- GAINERS & LOSERS API ---
 @app.get("/api/live-data")
 def get_live_market_data():
     session = requests.Session()
@@ -47,7 +46,7 @@ def get_live_market_data():
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# --- 2. SECTORAL INDICES API ---
+# --- SECTORAL INDICES API ---
 @app.get("/api/sectoral-indices")
 def get_sectoral_indices():
     session = requests.Session()
