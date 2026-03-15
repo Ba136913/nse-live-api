@@ -66,16 +66,14 @@ YF_HEADERS = {'User-Agent': 'Mozilla/5.0'}
 
 def fetch_market_data():
     global cached_data
-    
-    # .NS lagana zaroori hai Yahoo Finance ke liye
     symbols_list = [s + ".NS" for s in FO_STOCKS.split(",")]
-    batch_size = 40 # 40 stocks ek baar mein bhejenge taaki API crash na ho
+    batch_size = 40 
     
     while True:
         try:
             all_clean_stocks = []
             
-            # 1. BATCH PROCESSING FOR 180+ STOCKS
+            # Batch Processing for Yahoo API
             for i in range(0, len(symbols_list), batch_size):
                 batch = symbols_list[i:i+batch_size]
                 symbols_str = ",".join(batch)
@@ -89,22 +87,17 @@ def fetch_market_data():
                         all_clean_stocks.append({
                             "Symbol": s.get('symbol', '').replace('.NS', ''),
                             "LTP": round(s.get('regularMarketPrice', 0), 2),
-                            "Change": round(s.get('regularMarketChangePercent', 0), 2),
-                            "Volume": s.get('regularMarketVolume', 0)
+                            "Change": round(s.get('regularMarketChangePercent', 0), 2)
                         })
-                
-                # Small delay between batches to respect Rate Limits
                 time.sleep(0.5) 
                 
             if all_clean_stocks:
-                # 2. SORTING LOGIC (Top 20 Gainers & Losers)
+                # Sort Gainers & Losers
                 sorted_stocks = sorted(all_clean_stocks, key=lambda x: x['Change'], reverse=True)
                 top_gainers = sorted_stocks[:20] 
-                
-                # Reverse sort for losers so most negative comes first
                 top_losers = sorted(sorted_stocks[-20:], key=lambda x: x['Change']) 
                 
-                # 3. SENTIMENT METER (Out of 180+ stocks)
+                # Update Sentiment
                 g_count = len([x for x in all_clean_stocks if x['Change'] > 0])
                 l_count = len(all_clean_stocks) - g_count
                 cached_data["sentiment"] = calculate_sentiment(g_count, l_count)
@@ -115,7 +108,7 @@ def fetch_market_data():
                     "top_losers": top_losers
                 }
 
-            # 4. FETCH INDICES
+            # Fetch Indices
             i_url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={INDICES}"
             i_resp = requests.get(i_url, headers=YF_HEADERS, timeout=10)
             if i_resp.status_code == 200:
@@ -125,17 +118,16 @@ def fetch_market_data():
                 cached_data["sectoral"] = {"status": "success", "data": clean_indices}
 
             cached_data["last_updated"] = time.strftime("%H:%M:%S")
-            print(f"✅ Master Sync Done (180+ Stocks): {cached_data['last_updated']} | Gainers: {g_count}, Losers: {l_count}")
+            print(f"✅ Yahoo Data Synced: Gainers {g_count} | Losers {l_count}")
 
         except Exception as e:
-            print(f"⚠️ Master Fetch Error: {e}")
+            print(f"⚠️ Market Fetch Error: {e}")
             cached_data["sentiment"]["label"] = "Syncing... 🔄"
             
-        time.sleep(120) # 2 min wait before next full scan
+        time.sleep(120)
 
 threading.Thread(target=fetch_market_data, daemon=True).start()
 
-# --- API ENDPOINTS ---
 @app.get("/api/all-data")
 def get_all(): return cached_data
 
@@ -149,7 +141,7 @@ def chat_ai(req: ChatRequest):
         response = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": f"You are Gemini Bhai, a savage Quant F&O Trader. Market Mood: {mood}. Top Stock right now: {top_g}. Speak Hinglish. Be energetic and data-driven!"},
+                {"role": "system", "content": f"You are Gemini Bhai, a savage Quant Trader. Market Mood: {mood}. Top Stock: {top_g}. Speak Hinglish. Be energetic and data-driven!"},
                 {"role": "user", "content": req.message}
             ],
             max_tokens=300
