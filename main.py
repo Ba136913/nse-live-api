@@ -18,9 +18,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- CONFIG ---
-GROQ_API_KEY = "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" # <--- Key daal dena bhai
-groq_client = Groq(api_key=GROQ_API_KEY)
+# Purana line: groq_client = Groq(api_key=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)
+# Naya Safety code:
+try:
+    groq_client = Groq(api_key=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)
+except TypeError:
+    # Agar proxies wala error aaye, toh manually bypass
+    import httpx
+    groq_client = Groq(api_key=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, http_client=httpx.Client())
 
 cached_data = {
     "live_data": {"status": "loading", "top_gainers": [], "top_losers": []},
