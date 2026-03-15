@@ -6,6 +6,7 @@ import uvicorn
 import threading
 import time
 from groq import Groq
+import os
 
 app = FastAPI()
 
@@ -82,4 +83,6 @@ def chat_ai(req: ChatRequest):
     except: return {"reply": "Bhai, AI thoda busy hai!"}
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Render port dynamically assign karta hai, isliye os.environ zaroori hai
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
