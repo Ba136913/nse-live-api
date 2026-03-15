@@ -1,12 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel # Pydantic v1 syntax
+from pydantic import BaseModel
 import requests
 import uvicorn
 import threading
 import time
-from groq import Groq
 import os
+from groq import Groq
 
 app = FastAPI()
 
@@ -19,7 +19,7 @@ app.add_middleware(
 )
 
 # --- CONFIG ---
-GROQ_API_KEY = "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" 
+GROQ_API_KEY = "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" # <--- Key daal dena bhai
 groq_client = Groq(api_key=GROQ_API_KEY)
 
 cached_data = {
@@ -29,11 +29,10 @@ cached_data = {
     "last_updated": "Wait..."
 }
 
-# Pydantic v1 Model
+# Pydantic v2 Syntax
 class ChatRequest(BaseModel):
     message: str
 
-# --- SENTIMENT LOGIC ---
 def calculate_sentiment(gainers, losers):
     g_count = len(gainers)
     l_count = len(losers)
@@ -46,7 +45,6 @@ def calculate_sentiment(gainers, losers):
     if score < 45: return {"score": score, "label": "Bearish 🔴", "color": "#f87171"}
     return {"score": score, "label": "Neutral 🟡", "color": "#f59e0b"}
 
-# --- NSE BACKGROUND SYNC ---
 def fetch_nse_data():
     global cached_data
     session = requests.Session()
@@ -83,6 +81,5 @@ def chat_ai(req: ChatRequest):
     except: return {"reply": "Bhai, AI thoda busy hai!"}
 
 if __name__ == "__main__":
-    # Render port dynamically assign karta hai, isliye os.environ zaroori hai
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
