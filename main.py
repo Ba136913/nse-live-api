@@ -19,7 +19,7 @@ app.add_middleware(
 )
 
 # --- CONFIG ---
-GROQ_API_KEY = "YOUR_GROQ_API_KEY_HERE" # <--- Apni asli key yahan dalo
+GROQ_API_KEY = "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" # <--- Apni asli key yahan dalo
 groq_client = Groq(api_key=GROQ_API_KEY)
 
 # Global Memory
