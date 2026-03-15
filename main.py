@@ -62,7 +62,7 @@ FO_STOCKS = (
 )
 
 INDICES = "^NSEI,^NSEBANK,^CNXIT,^CNXAUTO,^CNXPHARMA,^CNXMETAL"
-YF_HEADERS = {'User-Agent': 'Mozilla/5.0'}
+YF_HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'}
 
 def fetch_market_data():
     global cached_data
@@ -72,8 +72,9 @@ def fetch_market_data():
     while True:
         try:
             all_clean_stocks = []
+            g_count, l_count = 0, 0
             
-            # Batch Processing for Yahoo API
+            # 1. Fetch Stocks
             for i in range(0, len(symbols_list), batch_size):
                 batch = symbols_list[i:i+batch_size]
                 symbols_str = ",".join(batch)
@@ -84,20 +85,27 @@ def fetch_market_data():
                 if response.status_code == 200:
                     s_data = response.json().get('quoteResponse', {}).get('result', [])
                     for s in s_data:
+                        # SUPER SAFE DATA EXTRACTION (Fixes NoneType Crash)
+                        raw_ltp = s.get('regularMarketPrice')
+                        raw_chg = s.get('regularMarketChangePercent')
+                        
+                        ltp = float(raw_ltp) if raw_ltp is not None else 0.0
+                        chg = float(raw_chg) if raw_chg is not None else 0.0
+                        
                         all_clean_stocks.append({
                             "Symbol": s.get('symbol', '').replace('.NS', ''),
-                            "LTP": round(s.get('regularMarketPrice', 0), 2),
-                            "Change": round(s.get('regularMarketChangePercent', 0), 2)
+                            "LTP": round(ltp, 2),
+                            "Change": round(chg, 2)
                         })
-                time.sleep(0.5) 
+                time.sleep(1) # Yahoo ko lagna chahiye insaan hai
                 
             if all_clean_stocks:
-                # Sort Gainers & Losers
+                # 2. Sort Gainers & Losers
                 sorted_stocks = sorted(all_clean_stocks, key=lambda x: x['Change'], reverse=True)
                 top_gainers = sorted_stocks[:20] 
                 top_losers = sorted(sorted_stocks[-20:], key=lambda x: x['Change']) 
                 
-                # Update Sentiment
+                # 3. Update Sentiment
                 g_count = len([x for x in all_clean_stocks if x['Change'] > 0])
                 l_count = len(all_clean_stocks) - g_count
                 cached_data["sentiment"] = calculate_sentiment(g_count, l_count)
@@ -108,21 +116,32 @@ def fetch_market_data():
                     "top_losers": top_losers
                 }
 
-            # Fetch Indices
+            # 4. Fetch Sectoral Indices Safely
             i_url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={INDICES}"
             i_resp = requests.get(i_url, headers=YF_HEADERS, timeout=10)
             if i_resp.status_code == 200:
                 i_data = i_resp.json().get('quoteResponse', {}).get('result', [])
                 idx_map = {"^NSEI": "NIFTY 50", "^NSEBANK": "BANK NIFTY", "^CNXIT": "NIFTY IT", "^CNXAUTO": "NIFTY AUTO", "^CNXPHARMA": "NIFTY PHARMA", "^CNXMETAL": "NIFTY METAL"}
-                clean_indices = [{"name": idx_map.get(i.get('symbol'), i.get('symbol')), "ltp": round(i.get('regularMarketPrice', 0), 2), "chng": round(i.get('regularMarketChangePercent', 0), 2)} for i in i_data]
+                
+                clean_indices = []
+                for i in i_data:
+                    raw_ltp = i.get('regularMarketPrice')
+                    raw_chg = i.get('regularMarketChangePercent')
+                    clean_indices.append({
+                        "name": idx_map.get(i.get('symbol'), i.get('symbol')), 
+                        "ltp": round(float(raw_ltp) if raw_ltp is not None else 0.0, 2), 
+                        "chng": round(float(raw_chg) if raw_chg is not None else 0.0, 2)
+                    })
                 cached_data["sectoral"] = {"status": "success", "data": clean_indices}
 
             cached_data["last_updated"] = time.strftime("%H:%M:%S")
-            print(f"✅ Yahoo Data Synced: Gainers {g_count} | Losers {l_count}")
+            print(f"✅ Data Synced: Gainers {g_count} | Losers {l_count}")
 
         except Exception as e:
-            print(f"⚠️ Market Fetch Error: {e}")
-            cached_data["sentiment"]["label"] = "Syncing... 🔄"
+            print(f"⚠️ Fetch Error: {str(e)}")
+            # Sirf tab jab sach mein internet/API tute
+            if cached_data["last_updated"] == "Wait...":
+                cached_data["sentiment"]["label"] = "Syncing... 🔄"
             
         time.sleep(120)
 
@@ -141,7 +160,7 @@ def chat_ai(req: ChatRequest):
         response = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": f"You are Gemini Bhai, a savage Quant Trader. Market Mood: {mood}. Top Stock: {top_g}. Speak Hinglish. Be energetic and data-driven!"},
+                {"role": "system", "content": f"You are Gemini Bhai, a savage Quant F&O Trader. Market Mood: {mood}. Top Stock: {top_g}. Speak Hinglish. Keep it short and energetic!"},
                 {"role": "user", "content": req.message}
             ],
             max_tokens=300
