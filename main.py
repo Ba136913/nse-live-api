@@ -73,12 +73,10 @@ def fetch_market_data():
         try:
             all_clean_stocks = []
             
-            # 1. Fetch 180+ Stocks via Yahoo SPARK API (Super Fast, No Crash)
             for i in range(0, len(symbols_list), batch_size):
                 batch = symbols_list[i:i+batch_size]
                 symbols_str = ",".join(batch)
                 
-                # Hidden API jo Apple/Android widgets use karte hain
                 url = f"https://query2.finance.yahoo.com/v8/finance/spark?symbols={symbols_str}&range=1d"
                 response = requests.get(url, headers=HEADERS, timeout=10)
                 
@@ -87,7 +85,6 @@ def fetch_market_data():
                     for res in results:
                         try:
                             sym = res.get('symbol', '').replace('.NS', '')
-                            # Extracting LTP and Previous Close directly from metadata
                             meta = res.get('response', [{}])[0].get('meta', {})
                             ltp = meta.get('regularMarketPrice', 0)
                             prev = meta.get('chartPreviousClose', 0)
@@ -99,17 +96,15 @@ def fetch_market_data():
                                     "LTP": round(ltp, 2),
                                     "Change": round(chg, 2)
                                 })
-                        except Exception as inner_e:
+                        except:
                             continue
-                time.sleep(1) # Chhota break taaki Yahoo block na kare
+                time.sleep(1) 
             
             if all_clean_stocks:
-                # 2. Sort Gainers & Losers
                 sorted_stocks = sorted(all_clean_stocks, key=lambda x: x['Change'], reverse=True)
                 top_gainers = sorted_stocks[:20] 
                 top_losers = sorted(sorted_stocks[-20:], key=lambda x: x['Change']) 
                 
-                # 3. Sentiment Update
                 g_count = len([x for x in all_clean_stocks if x['Change'] > 0])
                 l_count = len(all_clean_stocks) - g_count
                 cached_data["sentiment"] = calculate_sentiment(g_count, l_count)
@@ -120,7 +115,6 @@ def fetch_market_data():
                     "top_losers": top_losers
                 }
 
-            # 4. Fetch Indices
             i_url = f"https://query2.finance.yahoo.com/v8/finance/spark?symbols={INDICES}&range=1d"
             i_resp = requests.get(i_url, headers=HEADERS, timeout=10)
             if i_resp.status_code == 200:
@@ -147,12 +141,10 @@ def fetch_market_data():
                     cached_data["sectoral"] = {"status": "success", "data": clean_indices}
 
             cached_data["last_updated"] = time.strftime("%H:%M:%S")
-            print(f"✅ SPARK API Sync Done: Gainers {g_count} | Losers {l_count}")
 
         except Exception as e:
-            print(f"⚠️ Master Fetch Error: {str(e)}")
             if cached_data["last_updated"] == "Wait...":
-                cached_data["sentiment"]["label"] = "Sync Error 🔴"
+                cached_data["sentiment"]["label"] = "Syncing... 🔄"
             
         time.sleep(120)
 
@@ -171,7 +163,7 @@ def chat_ai(req: ChatRequest):
         response = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": f"You are Gemini Bhai, a savage Quant F&O Trader. Market Mood: {mood}. Top Stock: {top_g}. Speak Hinglish. Be energetic and crisp!"},
+                {"role": "system", "content": f"You are Gemini Bhai, a savage Quant F&O Trader. Market Mood: {mood}. Top Stock: {top_g}. Speak Hinglish. Be energetic!"},
                 {"role": "user", "content": req.message}
             ],
             max_tokens=300
