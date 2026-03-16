@@ -1,8 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import requests, uvicorn, threading, time, os, httpx
+import uvicorn, threading, time, os, httpx
 from groq import Groq
+import yfinance as yf
+import warnings
+
+# Ignore unnecessary Pandas warnings
+warnings.filterwarnings("ignore")
 
 app = FastAPI()
 
@@ -62,49 +67,49 @@ FO_STOCKS = (
 )
 
 INDICES = "^NSEI,^NSEBANK,^CNXIT,^CNXAUTO,^CNXPHARMA,^CNXMETAL"
-HEADERS = {'User-Agent': 'Mozilla/5.0'}
 
 def fetch_market_data():
     global cached_data
     symbols_list = [s + ".NS" for s in FO_STOCKS.split(",")]
-    batch_size = 40 
+    batch_size = 40 # RAM bachane ke liye 40-40 stocks fetch karenge
     
     while True:
         try:
             all_clean_stocks = []
             
+            # 1. Fetch 180+ Stocks Data (Batched to prevent memory crash)
             for i in range(0, len(symbols_list), batch_size):
                 batch = symbols_list[i:i+batch_size]
-                symbols_str = ",".join(batch)
                 
-                url = f"https://query2.finance.yahoo.com/v8/finance/spark?symbols={symbols_str}&range=1d"
-                response = requests.get(url, headers=HEADERS, timeout=10)
+                try:
+                    df = yf.download(batch, period="5d", progress=False)
+                    if not df.empty and 'Close' in df:
+                        closes = df['Close']
+                        for sym in batch:
+                            if sym in closes:
+                                valid_closes = closes[sym].dropna()
+                                if len(valid_closes) >= 2:
+                                    prev = float(valid_closes.iloc[-2])
+                                    ltp = float(valid_closes.iloc[-1])
+                                    if prev > 0:
+                                        chg = ((ltp - prev) / prev) * 100
+                                        all_clean_stocks.append({
+                                            "Symbol": sym.replace('.NS', ''),
+                                            "LTP": round(ltp, 2),
+                                            "Change": round(chg, 2)
+                                        })
+                except Exception as batch_err:
+                    print(f"Batch Error: {batch_err}")
                 
-                if response.status_code == 200:
-                    results = response.json().get('spark', {}).get('result', [])
-                    for res in results:
-                        try:
-                            sym = res.get('symbol', '').replace('.NS', '')
-                            meta = res.get('response', [{}])[0].get('meta', {})
-                            ltp = meta.get('regularMarketPrice', 0)
-                            prev = meta.get('chartPreviousClose', 0)
-                            
-                            if ltp and prev and prev > 0:
-                                chg = ((ltp - prev) / prev) * 100
-                                all_clean_stocks.append({
-                                    "Symbol": sym,
-                                    "LTP": round(ltp, 2),
-                                    "Change": round(chg, 2)
-                                })
-                        except:
-                            continue
-                time.sleep(1) 
-            
+                time.sleep(1) # Yahoo ko thoda saans lene do
+                        
             if all_clean_stocks:
+                # 2. Sort Gainers & Losers
                 sorted_stocks = sorted(all_clean_stocks, key=lambda x: x['Change'], reverse=True)
                 top_gainers = sorted_stocks[:20] 
                 top_losers = sorted(sorted_stocks[-20:], key=lambda x: x['Change']) 
                 
+                # 3. Sentiment Logic
                 g_count = len([x for x in all_clean_stocks if x['Change'] > 0])
                 l_count = len(all_clean_stocks) - g_count
                 cached_data["sentiment"] = calculate_sentiment(g_count, l_count)
@@ -115,36 +120,39 @@ def fetch_market_data():
                     "top_losers": top_losers
                 }
 
-            i_url = f"https://query2.finance.yahoo.com/v8/finance/spark?symbols={INDICES}&range=1d"
-            i_resp = requests.get(i_url, headers=HEADERS, timeout=10)
-            if i_resp.status_code == 200:
-                i_results = i_resp.json().get('spark', {}).get('result', [])
-                idx_map = {"^NSEI": "NIFTY 50", "^NSEBANK": "BANK NIFTY", "^CNXIT": "NIFTY IT", "^CNXAUTO": "NIFTY AUTO", "^CNXPHARMA": "NIFTY PHARMA", "^CNXMETAL": "NIFTY METAL"}
-                clean_indices = []
-                for res in i_results:
-                    try:
-                        sym = res.get('symbol', '')
-                        meta = res.get('response', [{}])[0].get('meta', {})
-                        ltp = meta.get('regularMarketPrice', 0)
-                        prev = meta.get('chartPreviousClose', 0)
-                        
-                        if ltp and prev and prev > 0:
-                            chg = ((ltp - prev) / prev) * 100
-                            clean_indices.append({
-                                "name": idx_map.get(sym, sym),
-                                "ltp": round(ltp, 2),
-                                "chng": round(chg, 2)
-                            })
-                    except:
-                        continue
-                if clean_indices:
-                    cached_data["sectoral"] = {"status": "success", "data": clean_indices}
+            # 4. Fetch Sectoral Indices
+            try:
+                idx_list = INDICES.split(",")
+                idx_df = yf.download(idx_list, period="5d", progress=False)
+                if not idx_df.empty and 'Close' in idx_df:
+                    idx_closes = idx_df['Close']
+                    clean_indices = []
+                    idx_map = {"^NSEI": "NIFTY 50", "^NSEBANK": "BANK NIFTY", "^CNXIT": "NIFTY IT", "^CNXAUTO": "NIFTY AUTO", "^CNXPHARMA": "NIFTY PHARMA", "^CNXMETAL": "NIFTY METAL"}
+                    
+                    for sym in idx_list:
+                        if sym in idx_closes:
+                            valid_idx = idx_closes[sym].dropna()
+                            if len(valid_idx) >= 2:
+                                prev = float(valid_idx.iloc[-2])
+                                ltp = float(valid_idx.iloc[-1])
+                                chg = ((ltp - prev) / prev) * 100 if prev > 0 else 0.0
+                                clean_indices.append({
+                                    "name": idx_map.get(sym, sym),
+                                    "ltp": round(ltp, 2),
+                                    "chng": round(chg, 2)
+                                })
+                    if clean_indices:
+                        cached_data["sectoral"] = {"status": "success", "data": clean_indices}
+            except Exception as e:
+                print(f"Index Fetch Error: {e}")
 
             cached_data["last_updated"] = time.strftime("%H:%M:%S")
+            print(f"✅ Data Synced Successfully!")
 
         except Exception as e:
+            print(f"⚠️ Master Fetch Error: {str(e)}")
             if cached_data["last_updated"] == "Wait...":
-                cached_data["sentiment"]["label"] = "Syncing... 🔄"
+                cached_data["sentiment"]["label"] = "Sync Error 🔄"
             
         time.sleep(120)
 
@@ -163,7 +171,7 @@ def chat_ai(req: ChatRequest):
         response = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": f"You are Gemini Bhai, a savage Quant F&O Trader. Market Mood: {mood}. Top Stock: {top_g}. Speak Hinglish. Be energetic!"},
+                {"role": "system", "content": f"You are Gemini Bhai, a savage Quant F&O Trader. Market Mood: {mood}. Top Stock: {top_g}. Speak Hinglish. Be energetic and data-driven!"},
                 {"role": "user", "content": req.message}
             ],
             max_tokens=300
