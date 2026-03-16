@@ -16,7 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global dictionary to store data so API is fast
+# Global dictionary
 cached_data = {
     "status": "loading",
     "timestamp": "Wait...",
@@ -44,65 +44,68 @@ FO_STOCKS = [
     "TORNTPHARM","TRENT","TVSMOTOR","UBL","ULTRACEMCO","UPLLTD","VEDL","VOLTAS","WIPRO","ZEEL","ZYDUSLIFE"
 ]
 
-def fetch_google_finance_data():
+def format_volume(vol):
+    """Volume ko readable banata hai (Lakhs/Crores me)"""
+    if vol == 0 or vol == "N/A": return "N/A"
+    if vol >= 10000000: return f"{vol/10000000:.2f} Cr"
+    if vol >= 100000: return f"{vol/100000:.2f} L"
+    return str(vol)
+
+def fetch_yahoo_json_data():
     global cached_data
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
+    
+    # Session banate hain taaki Yahoo ko lage hum asli browser hain
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "application/json"
+    })
+    
+    batch_size = 40 # Memory bachane ke liye 40-40 stocks ka batch
     
     while True:
         try:
             all_stocks_data = []
             
-            # Fetch data for each stock from Google Finance (HTML parsing based on specific classes)
-            # This is slower but highly resistant to blocking compared to Yahoo/NSE
-            for symbol in FO_STOCKS:
-                url = f"https://www.google.com/finance/quote/{symbol}:NSE"
-                try:
-                    response = requests.get(url, headers=headers, timeout=5)
-                    if response.status_code == 200:
-                        text = response.text
-                        
-                        # Very basic text extraction (Jugaad method to avoid heavy BeautifulSoup library)
-                        # Finding LTP
-                        ltp_marker = 'class="YMlKec fxKbKc">'
-                        ltp_start = text.find(ltp_marker)
-                        if ltp_start != -1:
-                            ltp_start += len(ltp_marker)
-                            ltp_end = text.find('<', ltp_start)
-                            ltp_str = text[ltp_start:ltp_end].replace('₹', '').replace(',', '')
-                            ltp = float(ltp_str)
-                            
-                            # Finding Percentage Change
-                            chg_marker = 'class="JwB6zf" style="font-size:16px;">'
-                            chg_start = text.find(chg_marker)
-                            chg = 0.0
-                            if chg_start != -1:
-                                chg_start += len(chg_marker)
-                                chg_end = text.find('%', chg_start)
-                                chg_str = text[chg_start:chg_end]
-                                # Google formats negative changes with a specific character, check raw text
-                                if "-" in chg_str or "−" in chg_str: # Handles different minus signs
-                                    chg = -float(chg_str.replace("-", "").replace("−", "").strip())
-                                else:
-                                    chg = float(chg_str.replace("+", "").strip())
-                                    
-                            all_stocks_data.append({
-                                "Symbol": symbol,
-                                "LTP": ltp,
-                                "Change_Percent": chg,
-                                "Volume": "N/A" # Live volume is hard to scrape reliably here
-                            })
-                except Exception as inner_e:
-                    continue # Skip stock if error
+            # Initial dummy request to get cookies from Yahoo
+            session.get("https://finance.yahoo.com", timeout=5)
+            time.sleep(1)
+
+            # Batched API Requests
+            for i in range(0, len(FO_STOCKS), batch_size):
+                batch = FO_STOCKS[i:i+batch_size]
+                symbols_str = ",".join([s + ".NS" for s in batch])
+                
+                # Yahoo v7 API - Fastest & Most Accurate
+                url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={symbols_str}"
+                
+                res = session.get(url, timeout=10)
+                if res.status_code == 200:
+                    results = res.json().get('quoteResponse', {}).get('result', [])
                     
-                time.sleep(0.5) # Crucial: Don't hammer Google too fast
+                    for stock in results:
+                        sym = stock.get('symbol', '').replace('.NS', '')
+                        ltp = stock.get('regularMarketPrice', 0.0)
+                        chg_pct = stock.get('regularMarketChangePercent', 0.0)
+                        vol = stock.get('regularMarketVolume', 0)
+
+                        if ltp > 0: # Sirf valid data add karo
+                            all_stocks_data.append({
+                                "Symbol": sym,
+                                "LTP": round(ltp, 2),
+                                "Change_Percent": round(chg_pct, 2),
+                                "Volume": format_volume(vol)
+                            })
+                
+                time.sleep(1) # Chhota break taaki Yahoo block na kare
 
             if all_stocks_data:
-                # Sort the data
+                # 2. Sort Gainers & Losers Exactly (Max positive to Max negative)
                 sorted_stocks = sorted(all_stocks_data, key=lambda x: x['Change_Percent'], reverse=True)
-                top_gainers = sorted_stocks[:20]
-                top_losers = sorted(sorted_stocks[-20:], key=lambda x: x['Change_Percent']) # Gets most negative
+                top_gainers = sorted_stocks[:20] 
+                
+                # Losers ke liye reverse order lenge (Sabse zyada gira hua pehle)
+                top_losers = sorted(sorted_stocks[-20:], key=lambda x: x['Change_Percent']) 
 
                 cached_data = {
                     "status": "success",
@@ -112,19 +115,19 @@ def fetch_google_finance_data():
                         "top_losers": top_losers
                     }
                 }
-                print(f"✅ Data Synced via Google Finance at {cached_data['timestamp']}")
+                print(f"✅ Exact Data Synced! Scanned {len(all_stocks_data)} F&O Stocks.")
 
         except Exception as e:
-            print(f"⚠️ Error fetching data: {e}")
+            print(f"⚠️ API Fetch Error: {e}")
             if cached_data["status"] == "loading":
                 cached_data["status"] = "error"
-                cached_data["timestamp"] = "Failed to fetch data"
+                cached_data["timestamp"] = "Fetch Failed. Retrying..."
 
-        # Wait 3 minutes before next full scrape to avoid bans
-        time.sleep(180) 
+        # Update every 2 mins
+        time.sleep(120) 
 
-# Start the background fetching thread
-threading.Thread(target=fetch_google_finance_data, daemon=True).start()
+# Start background thread
+threading.Thread(target=fetch_yahoo_json_data, daemon=True).start()
 
 @app.get("/api/live-data")
 def get_live_market_data():
