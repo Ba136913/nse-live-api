@@ -1,8 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import requests, uvicorn, threading, time, os, httpx
+import uvicorn, threading, time, os, httpx
 from groq import Groq
+import yfinance as yf
+import warnings
+
+# Ignore yfinance annoying warnings
+warnings.filterwarnings("ignore")
 
 app = FastAPI()
 
@@ -62,50 +67,46 @@ FO_STOCKS = (
 )
 
 INDICES = "^NSEI,^NSEBANK,^CNXIT,^CNXAUTO,^CNXPHARMA,^CNXMETAL"
-YF_HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'}
 
 def fetch_market_data():
     global cached_data
     symbols_list = [s + ".NS" for s in FO_STOCKS.split(",")]
-    batch_size = 40 
+    indices_list = INDICES.split(",")
     
     while True:
         try:
             all_clean_stocks = []
-            g_count, l_count = 0, 0
             
-            # 1. Fetch Stocks
-            for i in range(0, len(symbols_list), batch_size):
-                batch = symbols_list[i:i+batch_size]
-                symbols_str = ",".join(batch)
-                
-                s_url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={symbols_str}"
-                response = requests.get(s_url, headers=YF_HEADERS, timeout=10)
-                
-                if response.status_code == 200:
-                    s_data = response.json().get('quoteResponse', {}).get('result', [])
-                    for s in s_data:
-                        # SUPER SAFE DATA EXTRACTION (Fixes NoneType Crash)
-                        raw_ltp = s.get('regularMarketPrice')
-                        raw_chg = s.get('regularMarketChangePercent')
+            # 1. Fetch 180+ Stocks Data (Fast Batch Download)
+            df = yf.download(symbols_list, period="5d", progress=False)
+            
+            if not df.empty and 'Close' in df:
+                closes = df['Close']
+                for sym in symbols_list:
+                    try:
+                        # Extract last 2 valid closing prices for the symbol
+                        valid_closes = closes[sym].dropna()
+                        if len(valid_closes) >= 2:
+                            prev = float(valid_closes.iloc[-2])
+                            ltp = float(valid_closes.iloc[-1])
+                            
+                            if prev > 0:
+                                chg = ((ltp - prev) / prev) * 100
+                                all_clean_stocks.append({
+                                    "Symbol": sym.replace('.NS', ''),
+                                    "LTP": round(ltp, 2),
+                                    "Change": round(chg, 2)
+                                })
+                    except:
+                        continue
                         
-                        ltp = float(raw_ltp) if raw_ltp is not None else 0.0
-                        chg = float(raw_chg) if raw_chg is not None else 0.0
-                        
-                        all_clean_stocks.append({
-                            "Symbol": s.get('symbol', '').replace('.NS', ''),
-                            "LTP": round(ltp, 2),
-                            "Change": round(chg, 2)
-                        })
-                time.sleep(1) # Yahoo ko lagna chahiye insaan hai
-                
             if all_clean_stocks:
-                # 2. Sort Gainers & Losers
+                # 2. Sort out Top Gainers & Losers
                 sorted_stocks = sorted(all_clean_stocks, key=lambda x: x['Change'], reverse=True)
                 top_gainers = sorted_stocks[:20] 
                 top_losers = sorted(sorted_stocks[-20:], key=lambda x: x['Change']) 
                 
-                # 3. Update Sentiment
+                # 3. Sentiment Logic
                 g_count = len([x for x in all_clean_stocks if x['Change'] > 0])
                 l_count = len(all_clean_stocks) - g_count
                 cached_data["sentiment"] = calculate_sentiment(g_count, l_count)
@@ -116,30 +117,36 @@ def fetch_market_data():
                     "top_losers": top_losers
                 }
 
-            # 4. Fetch Sectoral Indices Safely
-            i_url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={INDICES}"
-            i_resp = requests.get(i_url, headers=YF_HEADERS, timeout=10)
-            if i_resp.status_code == 200:
-                i_data = i_resp.json().get('quoteResponse', {}).get('result', [])
+            # 4. Fetch Sectoral Indices
+            idx_df = yf.download(indices_list, period="5d", progress=False)
+            if not idx_df.empty and 'Close' in idx_df:
+                idx_closes = idx_df['Close']
+                clean_indices = []
                 idx_map = {"^NSEI": "NIFTY 50", "^NSEBANK": "BANK NIFTY", "^CNXIT": "NIFTY IT", "^CNXAUTO": "NIFTY AUTO", "^CNXPHARMA": "NIFTY PHARMA", "^CNXMETAL": "NIFTY METAL"}
                 
-                clean_indices = []
-                for i in i_data:
-                    raw_ltp = i.get('regularMarketPrice')
-                    raw_chg = i.get('regularMarketChangePercent')
-                    clean_indices.append({
-                        "name": idx_map.get(i.get('symbol'), i.get('symbol')), 
-                        "ltp": round(float(raw_ltp) if raw_ltp is not None else 0.0, 2), 
-                        "chng": round(float(raw_chg) if raw_chg is not None else 0.0, 2)
-                    })
-                cached_data["sectoral"] = {"status": "success", "data": clean_indices}
+                for sym in indices_list:
+                    try:
+                        valid_idx = idx_closes[sym].dropna()
+                        if len(valid_idx) >= 2:
+                            prev = float(valid_idx.iloc[-2])
+                            ltp = float(valid_idx.iloc[-1])
+                            chg = ((ltp - prev) / prev) * 100 if prev > 0 else 0.0
+                            
+                            clean_indices.append({
+                                "name": idx_map.get(sym, sym),
+                                "ltp": round(ltp, 2),
+                                "chng": round(chg, 2)
+                            })
+                    except:
+                        continue
+                if clean_indices:
+                    cached_data["sectoral"] = {"status": "success", "data": clean_indices}
 
             cached_data["last_updated"] = time.strftime("%H:%M:%S")
             print(f"✅ Data Synced: Gainers {g_count} | Losers {l_count}")
 
         except Exception as e:
             print(f"⚠️ Fetch Error: {str(e)}")
-            # Sirf tab jab sach mein internet/API tute
             if cached_data["last_updated"] == "Wait...":
                 cached_data["sentiment"]["label"] = "Syncing... 🔄"
             
@@ -160,7 +167,7 @@ def chat_ai(req: ChatRequest):
         response = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": f"You are Gemini Bhai, a savage Quant F&O Trader. Market Mood: {mood}. Top Stock: {top_g}. Speak Hinglish. Keep it short and energetic!"},
+                {"role": "system", "content": f"You are Gemini Bhai, a savage Quant F&O Trader. Market Mood: {mood}. Top Stock: {top_g}. Speak Hinglish. Be energetic and data-driven!"},
                 {"role": "user", "content": req.message}
             ],
             max_tokens=300
@@ -169,6 +176,9 @@ def chat_ai(req: ChatRequest):
     except Exception as e:
         return {"reply": f"AI Error: {str(e)}"}
 
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
