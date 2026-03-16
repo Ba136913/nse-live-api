@@ -1,13 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import uvicorn, threading, time, os, httpx
+import requests, uvicorn, threading, time, os, httpx
 from groq import Groq
-import yfinance as yf
-import warnings
-
-# Ignore yfinance annoying warnings
-warnings.filterwarnings("ignore")
 
 app = FastAPI()
 
@@ -67,46 +62,54 @@ FO_STOCKS = (
 )
 
 INDICES = "^NSEI,^NSEBANK,^CNXIT,^CNXAUTO,^CNXPHARMA,^CNXMETAL"
+HEADERS = {'User-Agent': 'Mozilla/5.0'}
 
 def fetch_market_data():
     global cached_data
     symbols_list = [s + ".NS" for s in FO_STOCKS.split(",")]
-    indices_list = INDICES.split(",")
+    batch_size = 40 
     
     while True:
         try:
             all_clean_stocks = []
             
-            # 1. Fetch 180+ Stocks Data (Fast Batch Download)
-            df = yf.download(symbols_list, period="5d", progress=False)
-            
-            if not df.empty and 'Close' in df:
-                closes = df['Close']
-                for sym in symbols_list:
-                    try:
-                        # Extract last 2 valid closing prices for the symbol
-                        valid_closes = closes[sym].dropna()
-                        if len(valid_closes) >= 2:
-                            prev = float(valid_closes.iloc[-2])
-                            ltp = float(valid_closes.iloc[-1])
+            # 1. Fetch 180+ Stocks via Yahoo SPARK API (Super Fast, No Crash)
+            for i in range(0, len(symbols_list), batch_size):
+                batch = symbols_list[i:i+batch_size]
+                symbols_str = ",".join(batch)
+                
+                # Hidden API jo Apple/Android widgets use karte hain
+                url = f"https://query2.finance.yahoo.com/v8/finance/spark?symbols={symbols_str}&range=1d"
+                response = requests.get(url, headers=HEADERS, timeout=10)
+                
+                if response.status_code == 200:
+                    results = response.json().get('spark', {}).get('result', [])
+                    for res in results:
+                        try:
+                            sym = res.get('symbol', '').replace('.NS', '')
+                            # Extracting LTP and Previous Close directly from metadata
+                            meta = res.get('response', [{}])[0].get('meta', {})
+                            ltp = meta.get('regularMarketPrice', 0)
+                            prev = meta.get('chartPreviousClose', 0)
                             
-                            if prev > 0:
+                            if ltp and prev and prev > 0:
                                 chg = ((ltp - prev) / prev) * 100
                                 all_clean_stocks.append({
-                                    "Symbol": sym.replace('.NS', ''),
+                                    "Symbol": sym,
                                     "LTP": round(ltp, 2),
                                     "Change": round(chg, 2)
                                 })
-                    except:
-                        continue
-                        
+                        except Exception as inner_e:
+                            continue
+                time.sleep(1) # Chhota break taaki Yahoo block na kare
+            
             if all_clean_stocks:
-                # 2. Sort out Top Gainers & Losers
+                # 2. Sort Gainers & Losers
                 sorted_stocks = sorted(all_clean_stocks, key=lambda x: x['Change'], reverse=True)
                 top_gainers = sorted_stocks[:20] 
                 top_losers = sorted(sorted_stocks[-20:], key=lambda x: x['Change']) 
                 
-                # 3. Sentiment Logic
+                # 3. Sentiment Update
                 g_count = len([x for x in all_clean_stocks if x['Change'] > 0])
                 l_count = len(all_clean_stocks) - g_count
                 cached_data["sentiment"] = calculate_sentiment(g_count, l_count)
@@ -117,21 +120,22 @@ def fetch_market_data():
                     "top_losers": top_losers
                 }
 
-            # 4. Fetch Sectoral Indices
-            idx_df = yf.download(indices_list, period="5d", progress=False)
-            if not idx_df.empty and 'Close' in idx_df:
-                idx_closes = idx_df['Close']
-                clean_indices = []
+            # 4. Fetch Indices
+            i_url = f"https://query2.finance.yahoo.com/v8/finance/spark?symbols={INDICES}&range=1d"
+            i_resp = requests.get(i_url, headers=HEADERS, timeout=10)
+            if i_resp.status_code == 200:
+                i_results = i_resp.json().get('spark', {}).get('result', [])
                 idx_map = {"^NSEI": "NIFTY 50", "^NSEBANK": "BANK NIFTY", "^CNXIT": "NIFTY IT", "^CNXAUTO": "NIFTY AUTO", "^CNXPHARMA": "NIFTY PHARMA", "^CNXMETAL": "NIFTY METAL"}
-                
-                for sym in indices_list:
+                clean_indices = []
+                for res in i_results:
                     try:
-                        valid_idx = idx_closes[sym].dropna()
-                        if len(valid_idx) >= 2:
-                            prev = float(valid_idx.iloc[-2])
-                            ltp = float(valid_idx.iloc[-1])
-                            chg = ((ltp - prev) / prev) * 100 if prev > 0 else 0.0
-                            
+                        sym = res.get('symbol', '')
+                        meta = res.get('response', [{}])[0].get('meta', {})
+                        ltp = meta.get('regularMarketPrice', 0)
+                        prev = meta.get('chartPreviousClose', 0)
+                        
+                        if ltp and prev and prev > 0:
+                            chg = ((ltp - prev) / prev) * 100
                             clean_indices.append({
                                 "name": idx_map.get(sym, sym),
                                 "ltp": round(ltp, 2),
@@ -143,12 +147,12 @@ def fetch_market_data():
                     cached_data["sectoral"] = {"status": "success", "data": clean_indices}
 
             cached_data["last_updated"] = time.strftime("%H:%M:%S")
-            print(f"✅ Data Synced: Gainers {g_count} | Losers {l_count}")
+            print(f"✅ SPARK API Sync Done: Gainers {g_count} | Losers {l_count}")
 
         except Exception as e:
-            print(f"⚠️ Fetch Error: {str(e)}")
+            print(f"⚠️ Master Fetch Error: {str(e)}")
             if cached_data["last_updated"] == "Wait...":
-                cached_data["sentiment"]["label"] = "Syncing... 🔄"
+                cached_data["sentiment"]["label"] = "Sync Error 🔴"
             
         time.sleep(120)
 
@@ -167,7 +171,7 @@ def chat_ai(req: ChatRequest):
         response = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": f"You are Gemini Bhai, a savage Quant F&O Trader. Market Mood: {mood}. Top Stock: {top_g}. Speak Hinglish. Be energetic and data-driven!"},
+                {"role": "system", "content": f"You are Gemini Bhai, a savage Quant F&O Trader. Market Mood: {mood}. Top Stock: {top_g}. Speak Hinglish. Be energetic and crisp!"},
                 {"role": "user", "content": req.message}
             ],
             max_tokens=300
@@ -176,9 +180,6 @@ def chat_ai(req: ChatRequest):
     except Exception as e:
         return {"reply": f"AI Error: {str(e)}"}
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
