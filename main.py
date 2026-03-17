@@ -1,13 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import requests
+import uvicorn
+import os
 
 app = FastAPI()
 
-# Frontend ko is API se connect karne ki permission (CORS)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Koi bhi website is API ko call kar sakti hai
+    allow_origins=["*"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -24,10 +25,8 @@ def get_live_market_data():
     session = requests.Session()
     
     try:
-        # Cookies set karo
         session.get("https://www.nseindia.com", headers=headers, timeout=10)
         
-        # Data fetch karo
         gainers_url = "https://www.nseindia.com/api/live-analysis-variations?index=gainers"
         losers_url = "https://www.nseindia.com/api/live-analysis-variations?index=loosers"
         
@@ -39,7 +38,7 @@ def get_live_market_data():
         
         def clean_data(stock_list):
             cleaned = []
-            for stock in stock_list[:20]: # Top 20 
+            for stock in stock_list[:20]: 
                 cleaned.append({
                     "Symbol": stock.get("symbol"),
                     "LTP": stock.get("ltp"),
@@ -59,3 +58,8 @@ def get_live_market_data():
         
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+# 🚀 FIX 3: Ye line add karni zaroori hai taaki Render server start kar sake!
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
