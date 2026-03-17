@@ -40,11 +40,11 @@ symbols = [
     "JISLJALEQS.NS", "KALPATPOWR.NS", "JBFIND.NS", "VSAN.NS", "COTTONFORMAT.NS",
     "PASSAVINTL.NS", "LADHUAUTO.NS", "SHILPAILS.NS", "FOSECOIND.NS", "GTLAN.NS",
     "BALLARPUR.NS", "ANDHRACEMENTS.NS", "SHIVALIK.NS", "VENKYS.NS", "SHANKARA.NS",
-    "GUJAPOLLO.NS", "GOODYEAR.NS", "BRIDGEWORK.NS", "MADRASFERT.NS", "AGRO TECHFOODSLTD.NS",
+    "GUJAPOLLO.NS", "GOODYEAR.NS", "BRIDGEWORK.NS", "MADRASFERT.NS", "AGRO%20TECHFOODSLTD.NS",
     "FOODSIN.NS", "NAHARINDUS.NS", "KABRAEXTRUSION.NS", "ORIENTELEC.NS", "NIHARINFRA.NS",
     "DRKSHREERAM.NS", "PILITA.NS", "GET.D.NS", "SERVALL.NS", "RAMANEWS.NS",
     "DHRUV.NS", "VARDHANCEMENT.NS", "AJMERACEMENT.NS", "SAURASHCEM.NS", "BARAKAH.FILL.NS",
-    "YCPL.NS", "HIRA CEMENT.NS", "GROVY.NS", "ORISSATEC.NS", "ANIKINDS.NS",
+    "YCPL.NS", "HIRA%20CEMENT.NS", "GROVY.NS", "ORISSATEC.NS", "ANIKINDS.NS",
     "VINYLINDIA.NS", "POLYLINK.NS", "KERLA.NS", "MVN.NS", "FILATEX.NS",
     "DAMODARISPAT.NS", "SINTEX.NS", "PATINTLOG.NS", "NIFTYBEES.NS", "JPASSOCIAT.NS",
     "SUVEN.NS", "BLEED.BL.NS", "MANAPPURAM.NS", "CANFINHOME.NS", "PEL.NS",
@@ -56,15 +56,15 @@ symbols = [
     "TORNTPHARM.NS", "ALKEM.NS", "AUROPHARMA.NS", "BIOCON.NS", "CADILAHC.NS",
     "STAR.NS", "APOLLOHOSP.NS", "APOLLOTYRE.NS", "MAXINDIA.NS", "NAM-INDIA.NS",
     "BHARTI-INFRATEL.NS", "IDEA.NS", "RCOM.NS", "VODAFONEINDIA.NS", "TECHINICALTELLER.NS",
-    "GSTL.NS", "KESORAMIND.NS", "JYOTHYLAB.NS", "GodfreyPhillips.NS", "VSTIND.NS",
-    "TCIFINANCE.NS", "AVANTI.NS", "SUNDARAM.NS", "RAMCO Super Leathers.NS", "CENTURYPLY.NS",
-    "GREENPLY.NS", "LEEL.NS", "SHANKRA.NS", "NIVAKA.NS", "BLACK BOX.NS",
+    "GSTL.NS", "KESORAMIND.NS", "JYOTHYLAB.NS", "GODFREYPHILLIPS.NS", "VSTIND.NS",
+    "TCIFINANCE.NS", "AVANTI.NS", "SUNDARAM.NS", "RAMCOSUPERLEATHERS.NS", "CENTURYPLY.NS",
+    "GREENPLY.NS", "LEEL.NS", "SHANKRA.NS", "NIVAKA.NS", "BLACKBOX.NS",
     "FRETAIL.NS", "SHRDIL.NS", "BILOWER.NS", "KYRO.NS", "SCHAFFHAUSEN.NS",
     "EPICENTRE.NS", "NSIL.NS", "PSL.NS", "INDOWIND.NS", "SMEANDTRUST.NS",
     "ACME.NS", "BIRLACABLE.NS", "FINOLEXIND.NS", "KEI.NS", "BUTTERFLY.NS",
     "JAIPRA.NS", "TTKPRESTIG.NS", "IFB.NS", "JOHNSON.NS", "KRBL.NS",
     "ALKALI.NS", "ASTEC.NS", "BALMERLAW.NS", "BALPHARMA.NS", "CANTABIL.NS",
-    "CORE PROJECTS.NS", "COSMOFRST.NS", "DCAL.NS", "DIGIDAY.NS", "EASTSILK.NS",
+    "COREPROJECTS.NS", "COSMOFRST.NS", "DCAL.NS", "DIGIDAY.NS", "EASTSILK.NS",
     "ECOM.NS", "FCS.NS", "GLITTEK.NS", "GNB.NS", "HCL-INSYS.NS",
     "HEXATRADEX.NS", "HUHTAMAKI.NS", "IBULISL.NS", "INDOCO.NS", "JKPAPER.NS"
 ]
@@ -83,13 +83,13 @@ def fetch_batch(symbol_batch):
 
 def fetch_all_data():
     all_data = []
-    batch_size = 40
+    batch_size = 20  # Reduced batch size to avoid rate limits
     for i in range(0, len(symbols), batch_size):
         batch = symbols[i:i + batch_size]
         result = fetch_batch(batch)
         if result and 'quoteResponse' in result and 'result' in result['quoteResponse']:
             all_data.extend(result['quoteResponse']['result'])
-        time.sleep(1)  # 1 second between batches
+        time.sleep(2)  # Increased sleep to 2 seconds to avoid 429 errors
     return all_data
 
 def process_and_store_data():
