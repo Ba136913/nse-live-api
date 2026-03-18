@@ -8,7 +8,7 @@ import threading
 
 app = FastAPI()
 
-# Ye line bohot zaroori hai taaki GitHub Pages Render se data le sake
+# GitHub Pages ko Render se connect karne ki permission
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -17,8 +17,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-cached_data = {"status": "loading", "timestamp": "Initializing...", "data": {"top_gainers": [], "top_losers": []}}
+# Global memory to serve data instantly
+cached_data = {
+    "status": "loading",
+    "timestamp": "Initializing Server...",
+    "data": {
+        "indices": [],
+        "top_gainers": [],
+        "top_losers": []
+    }
+}
 
+# --- MASTER LISTS ---
 FO_STOCKS = [
     "AARTIIND","ABB","ABBOTINDIA","ABCAPITAL","ABFRL","ACC","ADANIENT","ADANIPORTS","ALKEM","AMBUJACEM","APOLLOHOSP","APOLLOTYRE",
     "ASHOKLEY","ASIANPAINT","ASTRAL","ATUL","AUBANK","AUROPHARMA","AXISBANK","BAJAJ-AUTO","BAJAJFINSV","BAJFINANCE","BALKRISIND",
@@ -36,53 +46,81 @@ FO_STOCKS = [
     "TORNTPHARM","TRENT","TVSMOTOR","UBL","ULTRACEMCO","UPLLTD","VEDL","VOLTAS","WIPRO","ZEEL","ZYDUSLIFE"
 ]
 
-def fetch_data_job():
+INDICES = {"^NSEI": "NIFTY 50", "^NSEBANK": "BANK NIFTY", "^CNXIT": "NIFTY IT", "^CNXAUTO": "NIFTY AUTO", "^CNXPHARMA": "NIFTY PHARMA", "^CNXMETAL": "NIFTY METAL"}
+
+def fetch_market_data():
     global cached_data
     headers = {"User-Agent": "Mozilla/5.0"}
     batch_size = 40 
-    all_stocks_data = []
     
-    for i in range(0, len(FO_STOCKS), batch_size):
-        batch = FO_STOCKS[i:i+batch_size]
-        symbols_str = ",".join([s + ".NS" for s in batch])
-        url = f"https://query2.finance.yahoo.com/v8/finance/spark?symbols={symbols_str}&range=1d"
-        
+    while True:
         try:
-            res = requests.get(url, headers=headers, timeout=10)
-            if res.status_code == 200:
-                results = res.json().get('spark', {}).get('result', [])
-                for stock in results:
+            all_stocks = []
+            all_indices = []
+            
+            # 1. Fetch F&O Stocks (Batched)
+            for i in range(0, len(FO_STOCKS), batch_size):
+                batch = FO_STOCKS[i:i+batch_size]
+                symbols_str = ",".join([s + ".NS" for s in batch])
+                url = f"https://query2.finance.yahoo.com/v8/finance/spark?symbols={symbols_str}&range=1d"
+                
+                res = requests.get(url, headers=headers, timeout=10)
+                if res.status_code == 200:
+                    for stock in res.json().get('spark', {}).get('result', []):
+                        try:
+                            sym = stock.get('symbol', '').replace('.NS', '')
+                            meta = stock.get('response', [{}])[0].get('meta', {})
+                            ltp = meta.get('regularMarketPrice', 0.0)
+                            prev = meta.get('chartPreviousClose', 0.0)
+                            
+                            if ltp > 0 and prev > 0:
+                                chg_pct = ((ltp - prev) / prev) * 100
+                                all_stocks.append({"Symbol": sym, "LTP": round(ltp, 2), "Change_Percent": round(chg_pct, 2)})
+                        except: continue
+                time.sleep(0.5)
+
+            # 2. Fetch Sectoral Indices
+            idx_str = ",".join(INDICES.keys())
+            idx_url = f"https://query2.finance.yahoo.com/v8/finance/spark?symbols={idx_str}&range=1d"
+            idx_res = requests.get(idx_url, headers=headers, timeout=10)
+            if idx_res.status_code == 200:
+                for idx in idx_res.json().get('spark', {}).get('result', []):
                     try:
-                        sym = stock.get('symbol', '').replace('.NS', '')
-                        meta = stock.get('response', [{}])[0].get('meta', {})
+                        sym = idx.get('symbol', '')
+                        name = INDICES.get(sym, sym)
+                        meta = idx.get('response', [{}])[0].get('meta', {})
                         ltp = meta.get('regularMarketPrice', 0.0)
                         prev = meta.get('chartPreviousClose', 0.0)
                         
                         if ltp > 0 and prev > 0:
                             chg_pct = ((ltp - prev) / prev) * 100
-                            all_stocks_data.append({"Symbol": sym, "LTP": round(ltp, 2), "Change_Percent": round(chg_pct, 2), "Volume": "Live"})
+                            all_indices.append({"Index": name, "LTP": round(ltp, 2), "Change_Percent": round(chg_pct, 2)})
                     except: continue
-        except Exception as e: print(f"Batch Error: {e}")
-        time.sleep(0.5)
 
-    if all_stocks_data:
-        sorted_stocks = sorted(all_stocks_data, key=lambda x: x['Change_Percent'], reverse=True)
-        cached_data = {
-            "status": "success",
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "data": {"top_gainers": sorted_stocks[:20], "top_losers": sorted(sorted_stocks[-20:], key=lambda x: x['Change_Percent'])}
-        }
+            # 3. Sort & Update Cache
+            if all_stocks:
+                sorted_stocks = sorted(all_stocks, key=lambda x: x['Change_Percent'], reverse=True)
+                cached_data = {
+                    "status": "success",
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "data": {
+                        "indices": all_indices,
+                        "top_gainers": sorted_stocks[:20],
+                        "top_losers": sorted(sorted_stocks[-20:], key=lambda x: x['Change_Percent'])
+                    }
+                }
+                print(f"✅ Data Synced: {cached_data['timestamp']}")
 
-def background_loop():
-    while True:
-        time.sleep(120)
-        fetch_data_job()
+        except Exception as e:
+            print(f"⚠️ Fetch Error: {e}")
+            
+        time.sleep(120) # Update every 2 minutes
 
-fetch_data_job()
-threading.Thread(target=background_loop, daemon=True).start()
+# Start the background data fetcher
+threading.Thread(target=fetch_market_data, daemon=True).start()
 
 @app.get("/api/live-data")
-def get_live_market_data():
+def get_live_data():
     return cached_data
 
 if __name__ == "__main__":
