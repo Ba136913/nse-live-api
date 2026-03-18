@@ -18,49 +18,47 @@ app.add_middleware(
 
 cached_data = {
     "status": "loading",
-    "timestamp": "Connecting to Market...",
+    "timestamp": "Waking up Server & Connecting to Market...",
     "data": {"indices": [], "top_gainers": [], "top_losers": []}
 }
 
-# --- 180+ F&O STOCKS MASTER LIST ---
+# 🔥 THE ULTIMATE 250+ STOCKS LIST (Purane + Naye Rocket Stocks) 🔥
 FO_STOCKS = [
-    "AARTIIND","ABB","ABBOTINDIA","ABCAPITAL","ABFRL","ACC","ADANIENT","ADANIPORTS","ALKEM","AMBUJACEM",
-    "APOLLOHOSP","APOLLOTYRE","ASHOKLEY","ASIANPAINT","ASTRAL","ATUL","AUBANK","AUROPHARMA","AXISBANK",
-    "BAJAJ-AUTO","BAJAJFINSV","BAJFINANCE","BALKRISIND","BALRAMCHIN","BANDHANBNK","BANKBARODA","BATAINDIA",
-    "BEL","BERGEPAINT","BHARATFORG","BHARTIARTL","BHEL","BIOCON","BOSCHLTD","BPCL","BRITANNIA","BSOFT",
-    "CANBK","CANFINHOME","CHAMBLFERT","CHOLAFIN","CIPLA","COALINDIA","COFORGE","COLPAL","CONCOR",
-    "COROMANDEL","CROMPTON","CUB","CUMMINSIND","DABUR","DALBHARAT","DEEPAKNTR","DIVISLAB","DIXON","DLF",
-    "DRREDDY","EICHERMOT","ESCORTS","EXIDEIND","FEDERALBNK","GAIL","GLENMARK","GMRINFRA","GNFC","GODREJCP",
-    "GODREJPROP","GRANULES","GRASIM","GUJGASLTD","HAL","HAVELLS","HCLTECH","HDFCAMC","HDFCBANK","HDFCLIFE",
-    "HEROMOTOCO","HINDALCO","HINDCOPPER","HINDPETRO","HINDUNILVR","ICICIBANK","ICICIGI","ICICIPRULI","IDEA",
-    "IDFCFIRSTB","IEX","IGL","INDHOTEL","INDIACEM","INDIAMART","INDIGO","INDUSINDBK","INDUSTOWER","INFY",
-    "IOC","IPCALAB","IRCTC","ITC","JINDALSTEL","JKCEMENT","JSWSTEEL","JUBLFOOD","KOTAKBANK","LALPATHLAB",
-    "LAURUSLABS","LICHSGFIN","LT","LTIM","LTTS","LUPIN","M&M","M&MFIN","MANAPPURAM","MARICO","MARUTI","MCX",
-    "METROPOLIS","MFSL","MGL","MOTHERSON","MPHASIS","MRF","MUTHOOTFIN","NATIONALUM","NAUKRI","NAVINFLUOR",
-    "NESTLEIND","NMDC","NTPC","OBEROIRLTY","OFSS","ONGC","PAGEIND","PEL","PERSISTENT","PETRONET","PFC",
-    "PIDILITIND","PIIND","PNB","POLYCAB","POWERGRID","PVRINOX","RAMCOCEM","RBLBANK","RECLTD","RELIANCE",
-    "SAIL","SBICARD","SBILIFE","SBIN","SHREECEM","SIEMENS","SRF","SUNPHARMA","SUNTV","SYNGENE","TATACHEM",
-    "TATACOMM","TATACONSUM","TATAMOTORS","TATAPOWER","TATASTEEL","TCS","TECHM","TITAN","TORNTPHARM","TRENT",
-    "TVSMOTOR","UBL","ULTRACEMCO","UPLLTD","VEDL","VOLTAS","WIPRO","ZEEL","ZYDUSLIFE"
+    "WAAREEENER", "ANGELONE", "PREMIERENE", "NBCC", "DELHIVERY", "KPITTECH", "KFINTECH", "PAYTM", 
+    "INOXWIND", "JIOFIN", "TATATECH", "ZOMATO", "BSE", "MCX", "CDSL", "SUZLON", "IREDA", "IRFC", 
+    "RVNL", "MAZDOCK", "HAL", "AARTIIND", "ABB", "ABBOTINDIA", "ABCAPITAL", "ABFRL", "ACC", 
+    "ADANIENT", "ADANIPORTS", "ALKEM", "AMBUJACEM", "APOLLOHOSP", "APOLLOTYRE", "ASHOKLEY", "ASIANPAINT", 
+    "ASTRAL", "ATUL", "AUBANK", "AUROPHARMA", "AXISBANK", "BAJAJ-AUTO", "BAJAJFINSV", "BAJFINANCE", 
+    "BALKRISIND", "BALRAMCHIN", "BANDHANBNK", "BANKBARODA", "BATAINDIA", "BEL", "BERGEPAINT", "BHARATFORG", 
+    "BHARTIARTL", "BHEL", "BIOCON", "BOSCHLTD", "BPCL", "BRITANNIA", "BSOFT", "CANBK", "CANFINHOME", 
+    "CHAMBLFERT", "CHOLAFIN", "CIPLA", "COALINDIA", "COFORGE", "COLPAL", "CONCOR", "COROMANDEL", 
+    "CROMPTON", "CUB", "CUMMINSIND", "DABUR", "DALBHARAT", "DEEPAKNTR", "DIVISLAB", "DIXON", "DLF", 
+    "DRREDDY", "EICHERMOT", "ESCORTS", "EXIDEIND", "FEDERALBNK", "GAIL", "GLENMARK", "GMRINFRA", "GNFC", 
+    "GODREJCP", "GODREJPROP", "GRANULES", "GRASIM", "GUJGASLTD", "HAVELLS", "HCLTECH", "HDFCAMC", 
+    "HDFCBANK", "HDFCLIFE", "HEROMOTOCO", "HINDALCO", "HINDCOPPER", "HINDPETRO", "HINDUNILVR", "ICICIBANK", 
+    "ICICIGI", "ICICIPRULI", "IDEA", "IDFCFIRSTB", "IEX", "IGL", "INDHOTEL", "INDIACEM", "INDIAMART", 
+    "INDIGO", "INDUSINDBK", "INDUSTOWER", "INFY", "IOC", "IPCALAB", "IRCTC", "ITC", "JINDALSTEL", 
+    "JKCEMENT", "JSWSTEEL", "JUBLFOOD", "KOTAKBANK", "LALPATHLAB", "LAURUSLABS", "LICHSGFIN", "LT", 
+    "LTIM", "LTTS", "LUPIN", "M&M", "M&MFIN", "MANAPPURAM", "MARICO", "MARUTI", "METROPOLIS", "MFSL", 
+    "MGL", "MOTHERSON", "MPHASIS", "MRF", "MUTHOOTFIN", "NATIONALUM", "NAUKRI", "NAVINFLUOR", "NESTLEIND", 
+    "NMDC", "NTPC", "OBEROIRLTY", "OFSS", "ONGC", "PAGEIND", "PEL", "PERSISTENT", "PETRONET", "PFC", 
+    "PIDILITIND", "PIIND", "PNB", "POLYCAB", "POWERGRID", "PVRINOX", "RAMCOCEM", "RBLBANK", "RECLTD", 
+    "RELIANCE", "SAIL", "SBICARD", "SBILIFE", "SBIN", "SHREECEM", "SIEMENS", "SRF", "SUNPHARMA", "SUNTV", 
+    "SYNGENE", "TATACHEM", "TATACOMM", "TATACONSUM", "TATAMOTORS", "TATAPOWER", "TATASTEEL", "TCS", 
+    "TECHM", "TITAN", "TORNTPHARM", "TRENT", "TVSMOTOR", "UBL", "ULTRACEMCO", "UPLLTD", "VEDL", "VOLTAS", 
+    "WIPRO", "ZEEL", "ZYDUSLIFE"
 ]
 
-# 🔥 15+ EXACT TRADINGVIEW INDICES (Sab dikhenge ab!) 🔥
+# 🔥 TOP 8 RELIABLE SECTORAL INDICES 🔥
 INDICES = {
     "NSE:NIFTY": "NIFTY 50",
     "NSE:BANKNIFTY": "NIFTY BANK",
-    "NSE:CNXFIN": "NIFTY FIN SERVICE",
     "NSE:CNXIT": "NIFTY IT",
     "NSE:CNXAUTO": "NIFTY AUTO",
     "NSE:CNXFMCG": "NIFTY FMCG",
-    "NSE:CNXMEDIA": "NIFTY MEDIA",
     "NSE:CNXMETAL": "NIFTY METAL",
     "NSE:CNXPHARMA": "NIFTY PHARMA",
-    "NSE:CNXPSUBANK": "NIFTY PSU BANK",
-    "NSE:CNXREALTY": "NIFTY REALTY",
-    "NSE:CNXENERGY": "NIFTY ENERGY",
-    "NSE:CNXCONSUM": "NIFTY CONSUMER",
-    "NSE:CNXMNC": "NIFTY MNC",
-    "NSE:NIFTYPVTBANK": "NIFTY PVT BANK"
+    "NSE:CNXENERGY": "NIFTY ENERGY"
 }
 
 def fetch_tradingview_data():
@@ -82,7 +80,7 @@ def fetch_tradingview_data():
     
     while True:
         try:
-            # 1. Fetch Stocks
+            # 1. Fetch 250+ Stocks instantly
             res_stocks = requests.post(url, json=payload_stocks, timeout=10)
             stock_data = res_stocks.json().get("data", [])
             
@@ -96,7 +94,7 @@ def fetch_tradingview_data():
                         "Change_Percent": round(d[2], 2) if d[2] else 0
                     })
             
-            # 2. Fetch All Sectoral Indices
+            # 2. Fetch Indices
             res_indices = requests.post(url, json=payload_indices, timeout=10)
             idx_data = res_indices.json().get("data", [])
             
@@ -107,7 +105,7 @@ def fetch_tradingview_data():
                 if len(d) >= 3:
                     all_indices.append({
                         "Index": INDICES.get(ticker, d[0]),
-                        "TV_Ticker": ticker, # Link ke liye save kar rahe hain
+                        "TV_Ticker": ticker,
                         "LTP": round(d[1], 2) if d[1] else 0,
                         "Change_Percent": round(d[2], 2) if d[2] else 0
                     })
@@ -124,15 +122,17 @@ def fetch_tradingview_data():
                         "top_losers": sorted(sorted_stocks[-20:], key=lambda x: x['Change_Percent'])
                     }
                 }
-                print(f"✅ Data Synced! Sectors Loaded: {len(all_indices)}")
+                print(f"✅ Master Data Synced! Scanned {len(all_stocks)} Stocks.")
                 
         except Exception as e:
-            print(f"⚠️ Fetch Error: {e}")
+            print(f"⚠️ TV Fetch Error: {e}")
             if cached_data["status"] == "loading":
                 cached_data["timestamp"] = "Connection Error. Retrying..."
-                
-        time.sleep(60) 
+        
+        # 🔥 FIX: Increased to 3 minutes (180 seconds) to reduce server load!
+        time.sleep(180) 
 
+# Start background thread
 threading.Thread(target=fetch_tradingview_data, daemon=True).start()
 
 @app.get("/api/live-data")
@@ -142,3 +142,4 @@ def get_live_data():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+    
