@@ -1,307 +1,184 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
-import requests
+from pydantic import BaseModel
+import yfinance as yf
+import pandas as pd
+import pandas_ta as ta
+import numpy as np
 import os
-import time
-import threading
+from groq import Groq
+from cachetools import TTLCache
+import uvicorn
 
 app = FastAPI()
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+cache = TTLCache(maxsize=1000, ttl=300)
 
-# CORS Setup
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+if GROQ_API_KEY:
+    groq_client = Groq(api_key=GROQ_API_KEY)
+else:
+    groq_client = None
 
-# NSE F&O Stock List (Yahoo Finance Format)
-NSE_STOCKS = [
-    "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS", "HINDUNILVR.NS", "SBIN.NS",
-    "BHARTIARTL.NS", "ITC.NS", "KOTAKBANK.NS", "LT.NS", "AXISBANK.NS", "ASIANPAINT.NS", "MARUTI.NS",
-    "BAJFINANCE.NS", "TITAN.NS", "SUNPHARMA.NS", "ULTRACEMCO.NS", "NESTLEIND.NS", "WIPRO.NS",
-    "BAJAJFINSV.NS", "POWERGRID.NS", "NTPC.NS", "ONGC.NS", "TATAMOTORS.NS", "TATASTEEL.NS",
-    "JSWSTEEL.NS", "ADANIENT.NS", "ADANIPORTS.NS", "COALINDIA.NS", "BPCL.NS", "BRITANNIA.NS",
-    "CIPLA.NS", "DIVISLAB.NS", "DRREDDY.NS", "EICHERMOT.NS", "GRASIM.NS", "HEROMOTOCO.NS",
-    "HINDALCO.NS", "HINDZINC.NS", "INDUSINDBK.NS", "JINDALSTEL.NS", "M&M.NS", "SBILIFE.NS",
-    "SHRIRAMFIN.NS", "TECHM.NS", "TATACONSUM.NS", "TATAPOWER.NS", "TORNTPHARM.NS", "TVSMOTOR.NS",
-    "ADANIGREEN.NS", "APOLLOHOSP.NS", "BANDHANBNK.NS", "BEL.NS", "CANBK.NS", "DABUR.NS", "DLF.NS",
-    "GODREJCP.NS", "HAVELLS.NS", "HCLTECH.NS", "ICICIPRULI.NS", "IDFCFIRSTB.NS", "INDIGO.NS",
-    "IRCTC.NS", "JIOFIN.NS", "LALPATHLAB.NS", "MUTHOOTFIN.NS", "NAUKRI.NS", "NMDC.NS", "NYKAA.NS",
-    "OFSS.NS", "PAYTM.NS", "PERSISTENT.NS", "PNB.NS", "POLYCAB.NS", "PVRINOX.NS", "RAMCOCEM.NS",
-    "RBLBANK.NS", "SBICARD.NS", "SIEMENS.NS", "SRF.NS", "UNIONBANK.NS", "VBL.NS", "VEDL.NS",
-    "ZOMATO.NS", "ABB.NS", "ALKEM.NS", "APOLLOTYRE.NS", "ASHOKLEY.NS", "ASTRAL.NS", "AUROPHARMA.NS",
-    "BAJAJ-AUTO.NS", "BALKRISIND.NS", "BATAINDIA.NS", "BERGEPAINT.NS", "BHEL.NS", "BIOCON.NS",
-    "CROMPTON.NS", "CUMMINSIND.NS", "DIXON.NS", "ESCORTS.NS", "FEDERALBNK.NS", "GAIL.NS",
-    "GLENMARK.NS", "GODREJPROP.NS", "HAL.NS", "IDBI.NS", "IGL.NS", "INDHOTEL.NS", "IRFC.NS",
-    "LICHSGFIN.NS", "LUPIN.NS", "M&MFIN.NS", "MARICO.NS", "MOTHERSON.NS", "NATIONALUM.NS",
-    "NAVINFLUOR.NS", "OBEROIRLTY.NS", "PETRONET.NS", "PFC.NS", "PIIND.NS", "PNBHOUSING.NS",
-    "RECLTD.NS", "SAIL.NS", "STARHEALTH.NS", "SUPREMEIND.NS", "TATACHEM.NS", "THERMAX.NS",
-    "UPL.NS", "VOLTAS.NS", "YESBANK.NS", "ZYDUSWELL.NS"
+TICKERS = [
+    "AARTIIND", "ABB", "ABBOTINDIA", "ABCAPITAL", "ABFRL", "ACC", "ADANIENT", "ADANIPORTS", "ALKEM", "AMBUJACEM",
+    "APOLLOHOSP", "APOLLOTYRE", "ASHOKLEY", "ASIANPAINT", "ASTRAL", "ATUL", "AUBANK", "AUROPHARMA", "AXISBANK", "BAJAJ-AUTO",
+    "BAJAJFINSV", "BAJFINANCE", "BALKRISIND", "BALRAMCHIN", "BANDHANBNK", "BANKBARODA", "BATAINDIA", "BEL", "BERGEPAINT", "BHARATFORG",
+    "BHARTIARTL", "BHEL", "BIOCON", "BOSCHLTD", "BPCL", "BRITANNIA", "BSOFT", "CANBK", "CANFINHOME", "CHAMBLFERT",
+    "CHOLAFIN", "CIPLA", "COALINDIA", "COFORGE", "COLPAL", "CONCOR", "COROMANDEL", "CROMPTON", "CUB", "CUMMINSIND",
+    "DABUR", "DALBHARAT", "DEEPAKNTR", "DIVISLAB", "DIXON", "DLF", "DRREDDY", "EICHERMOT", "ESCORTS", "EXIDEIND",
+    "FEDERALBNK", "GAIL", "GLENMARK", "GMRINFRA", "GNFC", "GODREJCP", "GODREJPROP", "GRANULES", "GRASIM", "GUJGASLTD",
+    "HAL", "HAVELLS", "HCLTECH", "HDFCAMC", "HDFCBANK", "HDFCLIFE", "HEROMOTOCO", "HINDALCO", "HINDCOPPER", "HINDPETRO",
+    "HINDUNILVR", "ICICIBANK", "ICICIGI", "ICICIPRULI", "IDEA", "IDFCFIRSTB", "IEX", "IGL", "INDHOTEL", "INDIACEM",
+    "INDIAMART", "INDIGO", "INDUSINDBK", "INFY", "IPCALAB", "IRCTC", "ITC", "JINDALSTEL", "JKCEMENT", "JSWSTEEL",
+    "JUBLFOOD", "KOTAKBANK", "LALPATHLAB", "LAURUSLABS", "LICHSGFIN", "LT", "LTIM", "LTTS", "LUPIN", "M&M",
+    "M&MFIN", "MANAPPURAM", "MARICO", "MARUTI", "MCX", "METROPOLIS", "MFSL", "MGL", "MOTHERSON", "MPHASIS",
+    "MRF", "MUTHOOTFIN", "NATIONALUM", "NAUKRI", "NAVINFLUOR", "NESTLEIND", "NMDC", "NTPC", "OBEROIRLTY", "OFSS",
+    "ONGC", "PAGEIND", "PEL", "PERSISTENT", "PETRONET", "PFC", "PIDILITIND", "PIIND", "PNB", "POLYCAB",
+    "POWERGRID", "PVRINOX", "RAMCOCEM", "RBLBANK", "RECLTD", "RELIANCE", "SAIL", "SBICARD", "SBILIFE", "SBIN",
+    "SHREECEM", "SIEMENS", "SRF", "SUNPHARMA", "SUNTV", "SYNGENE", "TATACHEM", "TATACOMM", "TATACONSUM", "TATAMOTORS",
+    "TATAPOWER", "TATASTEEL", "TCS", "TECHM", "TITAN", "TORNTPHARM", "TRENT", "TVSMOTOR", "UBL", "ULTRACEMCO",
+    "UPL", "VEDL", "VOLTAS", "WIPRO", "ZOMATO", "ZYDUSLIFE", "SUZLON", "PAYTM", "JIOFIN"
 ]
 
-# Global data store
-market_data = {
-    "status": "loading",
-    "timestamp": "",
-    "data": {
-        "top_gainers": [],
-        "top_losers": []
-    }
-}
+class ChatRequest(BaseModel):
+    symbol: str = "General"
+    timeframe: str = ""
+    message: str
+    price: float = 0.0
+    rsi: float = 0.0
+    is_home: bool = False
 
-data_lock = threading.Lock()
-
-def fetch_yahoo_data():
-    """Fetch stock data from Yahoo Finance API"""
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json',
-        'Accept-Language': 'en-US,en;q=0.9',
-    }
-    
-    all_stocks = []
-    batch_size = 50
-    
-    for i in range(0, len(NSE_STOCKS), batch_size):
-        batch = NSE_STOCKS[i:i + batch_size]
-        try:
-            symbols = ",".join(batch)
-            url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={symbols}"
-            response = requests.get(url, headers=headers, timeout=15)
-            
-            if response.status_code != 200:
-                continue
-            
-            data = response.json()
-            quotes = data.get("quoteResponse", {}).get("result", [])
-            
-            for quote in quotes:
-                symbol = quote.get("symbol", "")
-                ltp = quote.get("regularMarketPrice")
-                prev_close = quote.get("previousClose")
-                
-                if ltp and prev_close and prev_close > 0:
-                    change = ltp - prev_close
-                    pct_change = (change / prev_close) * 100
-                    volume = quote.get("regularMarketVolume", 0)
-                    
-                    all_stocks.append({
-                        "Symbol": symbol.replace(".NS", ""),
-                        "LTP": round(ltp, 2),
-                        "Change_Percent": round(pct_change, 2),
-                        "Volume": volume
-                    })
-            
-            time.sleep(0.5)
-            
-        except Exception as e:
-            print(f"Error fetching batch {i}: {e}")
-            continue
-    
-    return all_stocks
-
-def update_market_data():
-    """Background worker to fetch and process market data"""
-    global market_data
-    
-    time.sleep(5)
-    
-    while True:
-        try:
-            print("Fetching market data...")
-            stocks = fetch_yahoo_data()
-            
-            if stocks and len(stocks) > 10:
-                gainers = sorted(stocks, key=lambda x: x['Change_Percent'], reverse=True)[:20]
-                losers = sorted(stocks, key=lambda x: x['Change_Percent'])[:20]
-                
-                with data_lock:
-                    market_data = {
-                        "status": "success",
-                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                        "data": {
-                            "top_gainers": gainers,
-                            "top_losers": losers
-                        }
-                    }
-                print(f"Data updated: {len(gainers)} gainers, {len(losers)} losers")
-            else:
-                print(f"Insufficient data received: {len(stocks)} stocks")
-                
-        except Exception as e:
-            print(f"Error in background worker: {e}")
+@app.post("/api/chat")
+def chat_with_ai(req: ChatRequest):
+    if not groq_client: return {"status": "error", "message": "Groq API Key missing."}
+    try:
+        if req.is_home:
+            system_prompt = "You are a Hedge Fund Quant and Trading Mentor. Answer in natural Hinglish (Hindi written in English alphabet). Keep explanations medium-length, direct, and straight to the point without unnecessary fluff or exaggerated slang. Be professional."
+        else:
+            system_prompt = f"You are a trading assistant advising on {req.symbol} ({req.timeframe} chart). Price is ₹{req.price}, RSI is {req.rsi}. You specialize in Smart Money Concepts (BOS, CHoCH, Liquidity), Ichimoku, and Pivots. Reply in natural Hinglish. Give a direct, medium-length, and straight-to-the-point technical analysis. Explain directly without wasting time."
         
-        time.sleep(120)
+        chat = groq_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": req.message}
+            ],
+            model="llama-3.1-8b-instant",
+            temperature=0.5,
+            max_tokens=350,
+        )
+        return {"status": "success", "reply": chat.choices[0].message.content.replace("*", "")}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
-@app.on_event("startup")
-async def startup_event():
-    thread = threading.Thread(target=update_market_data, daemon=True)
-    thread.start()
+@app.get("/api/swing-scanner")
+def run_swing_scanner():
+    return {"status": "success", "data": {"fno_stocks": TICKERS}}
 
-@app.get("/", response_class=HTMLResponse)
-async def serve_frontend():
-    html_content = """<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NSE F&O Live Dashboard</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            min-height: 100vh;
-            padding: 20px;
-            color: #fff;
-        }
-        .header { text-align: center; margin-bottom: 30px; }
-        h1 { font-size: 2rem; margin-bottom: 10px; color: #00d4ff; }
-        .status-bar { display: flex; justify-content: center; gap: 20px; align-items: center; flex-wrap: wrap; }
-        .timestamp { font-size: 14px; color: #8892b0; }
-        .refresh-btn { background: #00d4ff; color: #1a1a2e; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: 600; }
-        .refresh-btn:hover { background: #00a8cc; }
-        .refresh-btn:disabled { background: #444; cursor: not-allowed; }
-        .container { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; max-width: 1400px; margin: 0 auto; }
-        .table-card { background: rgba(255,255,255,0.05); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.1); }
-        .card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); }
-        .gainers-title { color: #00ff88; }
-        .losers-title { color: #ff4757; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 12px 10px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.05); }
-        th { color: #8892b0; font-size: 12px; text-transform: uppercase; font-weight: 600; }
-        .symbol { font-weight: 600; color: #fff; }
-        .ltp { font-family: 'Courier New', monospace; color: #00d4ff; }
-        .positive { color: #00ff88; font-weight: 600; }
-        .negative { color: #ff4757; font-weight: 600; }
-        .volume { color: #8892b0; font-size: 13px; }
-        .loader { text-align: center; padding: 60px 20px; }
-        .spinner { width: 50px; height: 50px; border: 4px solid rgba(255,255,255,0.1); border-top-color: #00d4ff; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .error-box { background: rgba(255,71,87,0.1); border: 1px solid #ff4757; border-radius: 8px; padding: 20px; text-align: center; margin: 20px auto; max-width: 500px; }
-        .error-box h3 { color: #ff4757; margin-bottom: 10px; }
-        .loading-note { background: rgba(0,212,255,0.1); border: 1px solid #00d4ff; border-radius: 8px; padding: 15px; text-align: center; margin: 20px auto; max-width: 500px; color: #8892b0; }
-        .live-indicator { display: inline-block; width: 10px; height: 10px; background: #00ff88; border-radius: 50%; margin-right: 8px; animation: pulse 2s infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        @media (max-width: 768px) { .container { grid-template-columns: 1fr; } h1 { font-size: 1.5rem; } }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>📊 NSE F&O Live Dashboard</h1>
-        <div class="status-bar">
-            <span class="timestamp" id="timestamp"><span class="live-indicator"></span>Initializing...</span>
-            <button class="refresh-btn" id="refresh-btn" onclick="fetchData()">🔄 Refresh</button>
-        </div>
-    </div>
-    <div id="error-container"></div>
-    <div id="loader" class="loader">
-        <div class="spinner"></div>
-        <p>Loading market data...</p>
-        <div class="loading-note">⏱️ First load may take 30-60 seconds. Data refreshes every 2 minutes.</div>
-    </div>
-    <div id="data-container" class="container" style="display: none;">
-        <div class="table-card">
-            <div class="card-header"><span class="gainers-title">🟢</span><h2 class="gainers-title">Top 20 Gainers</h2></div>
-            <table>
-                <thead><tr><th>Symbol</th><th>LTP (₹)</th><th>% Change</th><th>Volume</th></tr></thead>
-                <tbody id="gainers-body"></tbody>
-            </table>
-        </div>
-        <div class="table-card">
-            <div class="card-header"><span class="losers-title">🔴</span><h2 class="losers-title">Top 20 Losers</h2></div>
-            <table>
-                <thead><tr><th>Symbol</th><th>LTP (₹)</th><th>% Change</th><th>Volume</th></tr></thead>
-                <tbody id="losers-body"></tbody>
-            </table>
-        </div>
-    </div>
-    <script>
-        let isLoading = false;
-        let retryCount = 0;
-        const MAX_RETRIES = 15;
-        async function fetchData() {
-            if (isLoading) return;
-            isLoading = true;
-            const btn = document.getElementById('refresh-btn');
-            btn.disabled = true;
-            btn.textContent = '⏳ Loading...';
-            try {
-                const response = await fetch('/api/live-data');
-                const contentType = response.headers.get('content-type');
-                if (!contentType || !contentType.includes('application/json')) {
-                    throw new Error('Server returned non-JSON response');
-                }
-                const result = await response.json();
-                if (result.status === 'success' && result.data && result.data.top_gainers && result.data.top_gainers.length > 0) {
-                    document.getElementById('error-container').innerHTML = '';
-                    document.getElementById('loader').style.display = 'none';
-                    document.getElementById('data-container').style.display = 'grid';
-                    document.getElementById('timestamp').innerHTML = '<span class="live-indicator"></span>Last Updated: ' + result.timestamp + ' IST';
-                    renderTable('gainers-body', result.data.top_gainers, true);
-                    renderTable('losers-body', result.data.top_losers, false);
-                    retryCount = 0;
-                } else {
-                    throw new Error('Data not ready yet. Please wait...');
-                }
-            } catch (error) {
-                retryCount++;
-                console.error('Fetch error:', error);
-                if (retryCount >= MAX_RETRIES) {
-                    document.getElementById('loader').style.display = 'none';
-                    document.getElementById('error-container').innerHTML = '<div class="error-box"><h3>⚠️ Connection Error</h3><p>' + error.message + '</p><p style="margin-top:10px;">Please refresh the page or try again later.</p></div>';
-                } else {
-                    document.getElementById('error-container').innerHTML = '<div class="loading-note">⏱️ Still loading... (Attempt ' + retryCount + '/' + MAX_RETRIES + ')<br>' + error.message + '</div>';
-                }
-            } finally {
-                isLoading = false;
-                btn.disabled = false;
-                btn.textContent = '🔄 Refresh';
-            }
-        }
-        function renderTable(tbodyId, data, isGainer) {
-            const tbody = document.getElementById(tbodyId);
-            tbody.innerHTML = '';
-            data.forEach(stock => {
-                const sign = isGainer ? '+' : '';
-                const colorClass = isGainer ? 'positive' : 'negative';
-                const volume = formatVolume(stock.Volume);
-                const row = document.createElement('tr');
-                row.innerHTML = '<td class="symbol">' + escapeHtml(stock.Symbol) + '</td><td class="ltp">₹' + stock.LTP.toFixed(2) + '</td><td class="' + colorClass + '">' + sign + stock.Change_Percent.toFixed(2) + '%</td><td class="volume">' + volume + '</td>';
-                tbody.appendChild(row);
-            });
-        }
-        function formatVolume(vol) {
-            if (vol >= 10000000) return (vol / 10000000).toFixed(2) + ' Cr';
-            if (vol >= 100000) return (vol / 100000).toFixed(2) + ' L';
-            if (vol >= 1000) return (vol / 1000).toFixed(2) + ' K';
-            return vol.toString();
-        }
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-        fetchData();
-        setInterval(fetchData, 120000);
-    </script>
-</body>
-</html>"""
-    return html_content
+def safe_val(val):
+    if pd.isna(val) or val is None or np.isnan(val) or np.isinf(val): 
+        return None
+    return round(float(val), 2)
 
-@app.get("/api/live-data", response_class=JSONResponse)
-async def get_live_data():
-    with data_lock:
-        return market_data
+@app.get("/api/analyze/{symbol}/{timeframe}")
+def analyze_stock(symbol: str, timeframe: str):
+    yf_symbol = symbol.upper().replace(".NS", "") + ".NS"
+    period = "5d" if timeframe in ['1m', '5m', '15m'] else ("1mo" if timeframe in ['60m', '1h'] else "1y")
+    cache_key = f"analyze_{timeframe}_{yf_symbol}"
+    if cache_key in cache: return {"status": "success", "data": cache[cache_key]}
 
-@app.get("/health", response_class=JSONResponse)
-async def health_check():
-    return {"status": "healthy", "data_available": market_data["status"] == "success"}
+    try:
+        df = yf.download(yf_symbol, period=period, interval=timeframe, progress=False)
+        df_daily = yf.download(yf_symbol, period="15d", interval="1d", progress=False)
 
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        if isinstance(df_daily.columns, pd.MultiIndex): df_daily.columns = df_daily.columns.get_level_values(0)
+        
+        if df.empty or 'Close' not in df.columns or df['Close'].dropna().empty: 
+            return {"status": "error", "message": f"Market Data unavailable for {symbol}. Try again later."}
+
+        df = df.dropna(subset=['Close']).copy()
+
+        # ----------------------------------------------------
+        # 🔥 PIVOTS (Traditional)
+        # ----------------------------------------------------
+        df_daily.index = df_daily.index.tz_localize(None)
+        H, L, C = df_daily['High'], df_daily['Low'], df_daily['Close']
+        P_val = (H + L + C) / 3
+        R1 = (2 * P_val) - L; S1 = (2 * P_val) - H
+        R2 = P_val + (H - L); S2 = P_val - (H - L)
+        R3 = R1 + (H - L); S3 = S1 - (H - L)
+        R4 = R3 + (H - L); S4 = S3 - (H - L)
+        R5 = R4 + (H - L); S5 = S4 - (H - L)
+
+        pivots = pd.DataFrame({'P': P_val, 'R1': R1, 'S1': S1, 'R2': R2, 'S2': S2, 'R3': R3, 'S3': S3, 'R4': R4, 'S4': S4, 'R5': R5, 'S5': S5}).shift(1)
+        pivots.index = pivots.index.date
+        df.index = df.index.tz_localize(None)
+        df['date_only'] = df.index.date
+        for col in ['P', 'R1', 'S1', 'R2', 'S2', 'R3', 'S3', 'R4', 'S4', 'R5', 'S5']: df[col] = df['date_only'].map(pivots[col])
+
+        # ----------------------------------------------------
+        # 🔥 EXACT LUXALGO SMC ENGINE (VECTORIZED & CRASH-PROOF)
+        # ----------------------------------------------------
+        # 11 bars window: 5 left, 1 center, 5 right
+        df['roll_max'] = df['High'].rolling(window=11, center=True).max()
+        df['roll_min'] = df['Low'].rolling(window=11, center=True).min()
+        
+        # Mark exact pivot points
+        df['SwingHigh'] = np.where(df['High'] == df['roll_max'], df['High'], np.nan)
+        df['SwingLow'] = np.where(df['Low'] == df['roll_min'], df['Low'], np.nan)
+        
+        # Carry forward the last confirmed pivot
+        df['LastSwingHigh'] = df['SwingHigh'].ffill()
+        df['LastSwingLow'] = df['SwingLow'].ffill()
+        
+        # Generate BOS/CHoCH only on the exact candle of the breakout
+        df['smc_bull'] = np.where((df['Close'] > df['LastSwingHigh']) & (df['Close'].shift(1) <= df['LastSwingHigh']), 1, 0)
+        df['smc_bear'] = np.where((df['Close'] < df['LastSwingLow']) & (df['Close'].shift(1) >= df['LastSwingLow']), -1, 0)
+
+        # ----------------------------------------------------
+        # 🔥 ICHIMOKU
+        # ----------------------------------------------------
+        df.ta.rsi(length=14, append=True)
+        high_9 = df['High'].rolling(9).max(); low_9 = df['Low'].rolling(9).min(); df['tenkan'] = (high_9 + low_9) / 2
+        high_26 = df['High'].rolling(26).max(); low_26 = df['Low'].rolling(26).min(); df['kijun'] = (high_26 + low_26) / 2
+        df['span_a'] = ((df['tenkan'] + df['kijun']) / 2).shift(26)
+        high_52 = df['High'].rolling(52).max(); low_52 = df['Low'].rolling(52).min(); df['span_b'] = ((high_52 + low_52) / 2).shift(26)
+        df['chikou'] = df['Close'].shift(-26)
+
+        chart_data = []
+        for dt, row in df.iterrows():
+            unix_t = int(pd.Timestamp(dt).timestamp()) + (5.5 * 3600)
+            
+            chart_data.append({
+                "time": unix_t, "open": safe_val(row['Open']), "high": safe_val(row['High']), "low": safe_val(row['Low']), "close": safe_val(row['Close']),
+                "p": safe_val(row['P']), "r1": safe_val(row['R1']), "s1": safe_val(row['S1']), "r2": safe_val(row['R2']), "s2": safe_val(row['S2']), "r3": safe_val(row['R3']), "s3": safe_val(row['S3']),
+                "r4": safe_val(row['R4']), "s4": safe_val(row['S4']), "r5": safe_val(row['R5']), "s5": safe_val(row['S5']),
+                "rsi": safe_val(row.get('RSI_14', 50)), "tenkan": safe_val(row['tenkan']), "kijun": safe_val(row['kijun']), "span_a": safe_val(row['span_a']), "span_b": safe_val(row['span_b']), "chikou": safe_val(row['chikou']),
+                "smc_bull": int(row['smc_bull']), "smc_bear": int(row['smc_bear'])
+            })
+
+        latest_price = round(float(df.iloc[-1]['Close']), 2)
+        ai_commentary = "⚠️ AI Chat Active. Ask about Pivots or Ichimoku Cloud."
+        if groq_client:
+            try:
+                prompt = f"Analyze {timeframe} chart for {symbol} on NSE. Price: ₹{latest_price}. Provide a direct, medium-length technical breakdown combining Smart Money Concepts, Ichimoku, and Pivots. IMPORTANT: Reply strictly in natural Hinglish, straight to the point."
+                chat = groq_client.chat.completions.create(
+                    messages=[
+                        {"role": "system", "content": "You are a technical analyst. Provide direct, medium-length analysis in natural Hinglish. No extra fluff."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    model="llama-3.1-8b-instant",
+                    temperature=0.5,
+                    max_tokens=250,
+                )
+                ai_commentary = chat.choices[0].message.content.replace("*", "")
+            except Exception as e:
+                ai_commentary = f"⚠️ AI System waking up. Ask me a question below."
+
+        res = {"status": "success", "data": {"symbol": yf_symbol.replace(".NS", ""), "latest_close": latest_price, "ai_prediction": ai_commentary, "historical_chart_data": chart_data}}
+        cache[cache_key] = res
+        return res
+    except Exception as e: return {"status": "error", "message": f"Server processing error. {str(e)[:50]}"}
+
+if __name__ == "__main__": uvicorn.run(app, host="0.0.0.0", port=10000)
