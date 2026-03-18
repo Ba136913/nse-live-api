@@ -44,10 +44,11 @@ FO_STOCKS = [
     "TVSMOTOR","UBL","ULTRACEMCO","UPLLTD","VEDL","VOLTAS","WIPRO","ZEEL","ZYDUSLIFE"
 ]
 
-# 🔥 ALL SECTORAL INDICES ADDED HERE 🔥
+# 🔥 15+ EXACT TRADINGVIEW INDICES (Sab dikhenge ab!) 🔥
 INDICES = {
     "NSE:NIFTY": "NIFTY 50",
     "NSE:BANKNIFTY": "NIFTY BANK",
+    "NSE:CNXFIN": "NIFTY FIN SERVICE",
     "NSE:CNXIT": "NIFTY IT",
     "NSE:CNXAUTO": "NIFTY AUTO",
     "NSE:CNXFMCG": "NIFTY FMCG",
@@ -57,7 +58,9 @@ INDICES = {
     "NSE:CNXPSUBANK": "NIFTY PSU BANK",
     "NSE:CNXREALTY": "NIFTY REALTY",
     "NSE:CNXENERGY": "NIFTY ENERGY",
-    "NSE:CNXCONSUM": "NIFTY CONSUMER"
+    "NSE:CNXCONSUM": "NIFTY CONSUMER",
+    "NSE:CNXMNC": "NIFTY MNC",
+    "NSE:NIFTYPVTBANK": "NIFTY PVT BANK"
 }
 
 def fetch_tradingview_data():
@@ -79,7 +82,7 @@ def fetch_tradingview_data():
     
     while True:
         try:
-            # 1. Fetch Stocks (100% Block-Proof)
+            # 1. Fetch Stocks
             res_stocks = requests.post(url, json=payload_stocks, timeout=10)
             stock_data = res_stocks.json().get("data", [])
             
@@ -104,6 +107,7 @@ def fetch_tradingview_data():
                 if len(d) >= 3:
                     all_indices.append({
                         "Index": INDICES.get(ticker, d[0]),
+                        "TV_Ticker": ticker, # Link ke liye save kar rahe hain
                         "LTP": round(d[1], 2) if d[1] else 0,
                         "Change_Percent": round(d[2], 2) if d[2] else 0
                     })
@@ -120,18 +124,15 @@ def fetch_tradingview_data():
                         "top_losers": sorted(sorted_stocks[-20:], key=lambda x: x['Change_Percent'])
                     }
                 }
-                print(f"✅ Data Synced Successfully at {cached_data['timestamp']}")
-            else:
-                cached_data["timestamp"] = "⚠️ Fetch Error. Retrying..."
+                print(f"✅ Data Synced! Sectors Loaded: {len(all_indices)}")
                 
         except Exception as e:
             print(f"⚠️ Fetch Error: {e}")
             if cached_data["status"] == "loading":
                 cached_data["timestamp"] = "Connection Error. Retrying..."
                 
-        time.sleep(60) # Fast 1-minute updates!
+        time.sleep(60) 
 
-# Start background thread
 threading.Thread(target=fetch_tradingview_data, daemon=True).start()
 
 @app.get("/api/live-data")
