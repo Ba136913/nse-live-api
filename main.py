@@ -8,7 +8,6 @@ import threading
 
 app = FastAPI()
 
-# GitHub Pages ko Render se connect karne ki permission
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -17,87 +16,95 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global memory to serve data instantly
 cached_data = {
     "status": "loading",
-    "timestamp": "Initializing Server...",
-    "data": {
-        "indices": [],
-        "top_gainers": [],
-        "top_losers": []
-    }
+    "timestamp": "Connecting to Market...",
+    "data": {"indices": [], "top_gainers": [], "top_losers": []}
 }
 
-# --- MASTER LISTS ---
+# --- 180+ F&O STOCKS MASTER LIST ---
 FO_STOCKS = [
-    "AARTIIND","ABB","ABBOTINDIA","ABCAPITAL","ABFRL","ACC","ADANIENT","ADANIPORTS","ALKEM","AMBUJACEM","APOLLOHOSP","APOLLOTYRE",
-    "ASHOKLEY","ASIANPAINT","ASTRAL","ATUL","AUBANK","AUROPHARMA","AXISBANK","BAJAJ-AUTO","BAJAJFINSV","BAJFINANCE","BALKRISIND",
-    "BALRAMCHIN","BANDHANBNK","BANKBARODA","BATAINDIA","BEL","BERGEPAINT","BHARATFORG","BHARTIARTL","BHEL","BIOCON","BOSCHLTD","BPCL",
-    "BRITANNIA","BSOFT","CANBK","CANFINHOME","CHAMBLFERT","CHOLAFIN","CIPLA","COALINDIA","COFORGE","COLPAL","CONCOR","COROMANDEL",
-    "CROMPTON","CUB","CUMMINSIND","DABUR","DALBHARAT","DEEPAKNTR","DIVISLAB","DIXON","DLF","DRREDDY","EICHERMOT","ESCORTS","EXIDEIND",
-    "FEDERALBNK","GAIL","GLENMARK","GMRINFRA","GNFC","GODREJCP","GODREJPROP","GRANULES","GRASIM","GUJGASLTD","HAL","HAVELLS","HCLTECH",
-    "HDFCAMC","HDFCBANK","HDFCLIFE","HEROMOTOCO","HINDALCO","HINDCOPPER","HINDPETRO","HINDUNILVR","ICICIBANK","ICICIGI","ICICIPRULI",
-    "IDEA","IDFCFIRSTB","IEX","IGL","INDHOTEL","INDIACEM","INDIAMART","INDIGO","INDUSINDBK","INDUSTOWER","INFY","IOC","IPCALAB","IRCTC","ITC",
-    "JINDALSTEL","JKCEMENT","JSWSTEEL","JUBLFOOD","KOTAKBANK","LALPATHLAB","LAURUSLABS","LICHSGFIN","LT","LTIM","LTTS","LUPIN","M&M",
-    "M&MFIN","MANAPPURAM","MARICO","MARUTI","MCX","METROPOLIS","MFSL","MGL","MOTHERSON","MPHASIS","MRF","MUTHOOTFIN","NATIONALUM","NAUKRI",
-    "NAVINFLUOR","NESTLEIND","NMDC","NTPC","OBEROIRLTY","OFSS","ONGC","PAGEIND","PEL","PERSISTENT","PETRONET","PFC","PIDILITIND","PIIND","PNB",
-    "POLYCAB","POWERGRID","PVRINOX","RAMCOCEM","RBLBANK","RECLTD","RELIANCE","SAIL","SBICARD","SBILIFE","SBIN","SHREECEM","SIEMENS","SRF",
-    "SUNPHARMA","SUNTV","SYNGENE","TATACHEM","TATACOMM","TATACONSUM","TATAMOTORS","TATAPOWER","TATASTEEL","TCS","TECHM","TITAN",
-    "TORNTPHARM","TRENT","TVSMOTOR","UBL","ULTRACEMCO","UPLLTD","VEDL","VOLTAS","WIPRO","ZEEL","ZYDUSLIFE"
+    "AARTIIND","ABB","ABBOTINDIA","ABCAPITAL","ABFRL","ACC","ADANIENT","ADANIPORTS","ALKEM","AMBUJACEM",
+    "APOLLOHOSP","APOLLOTYRE","ASHOKLEY","ASIANPAINT","ASTRAL","ATUL","AUBANK","AUROPHARMA","AXISBANK",
+    "BAJAJ-AUTO","BAJAJFINSV","BAJFINANCE","BALKRISIND","BALRAMCHIN","BANDHANBNK","BANKBARODA","BATAINDIA",
+    "BEL","BERGEPAINT","BHARATFORG","BHARTIARTL","BHEL","BIOCON","BOSCHLTD","BPCL","BRITANNIA","BSOFT",
+    "CANBK","CANFINHOME","CHAMBLFERT","CHOLAFIN","CIPLA","COALINDIA","COFORGE","COLPAL","CONCOR",
+    "COROMANDEL","CROMPTON","CUB","CUMMINSIND","DABUR","DALBHARAT","DEEPAKNTR","DIVISLAB","DIXON","DLF",
+    "DRREDDY","EICHERMOT","ESCORTS","EXIDEIND","FEDERALBNK","GAIL","GLENMARK","GMRINFRA","GNFC","GODREJCP",
+    "GODREJPROP","GRANULES","GRASIM","GUJGASLTD","HAL","HAVELLS","HCLTECH","HDFCAMC","HDFCBANK","HDFCLIFE",
+    "HEROMOTOCO","HINDALCO","HINDCOPPER","HINDPETRO","HINDUNILVR","ICICIBANK","ICICIGI","ICICIPRULI","IDEA",
+    "IDFCFIRSTB","IEX","IGL","INDHOTEL","INDIACEM","INDIAMART","INDIGO","INDUSINDBK","INDUSTOWER","INFY",
+    "IOC","IPCALAB","IRCTC","ITC","JINDALSTEL","JKCEMENT","JSWSTEEL","JUBLFOOD","KOTAKBANK","LALPATHLAB",
+    "LAURUSLABS","LICHSGFIN","LT","LTIM","LTTS","LUPIN","M&M","M&MFIN","MANAPPURAM","MARICO","MARUTI","MCX",
+    "METROPOLIS","MFSL","MGL","MOTHERSON","MPHASIS","MRF","MUTHOOTFIN","NATIONALUM","NAUKRI","NAVINFLUOR",
+    "NESTLEIND","NMDC","NTPC","OBEROIRLTY","OFSS","ONGC","PAGEIND","PEL","PERSISTENT","PETRONET","PFC",
+    "PIDILITIND","PIIND","PNB","POLYCAB","POWERGRID","PVRINOX","RAMCOCEM","RBLBANK","RECLTD","RELIANCE",
+    "SAIL","SBICARD","SBILIFE","SBIN","SHREECEM","SIEMENS","SRF","SUNPHARMA","SUNTV","SYNGENE","TATACHEM",
+    "TATACOMM","TATACONSUM","TATAMOTORS","TATAPOWER","TATASTEEL","TCS","TECHM","TITAN","TORNTPHARM","TRENT",
+    "TVSMOTOR","UBL","ULTRACEMCO","UPLLTD","VEDL","VOLTAS","WIPRO","ZEEL","ZYDUSLIFE"
 ]
 
-INDICES = {"^NSEI": "NIFTY 50", "^NSEBANK": "BANK NIFTY", "^CNXIT": "NIFTY IT", "^CNXAUTO": "NIFTY AUTO", "^CNXPHARMA": "NIFTY PHARMA", "^CNXMETAL": "NIFTY METAL"}
+INDICES = {
+    "NSE:NIFTY": "NIFTY 50",
+    "NSE:BANKNIFTY": "BANK NIFTY",
+    "NSE:CNXIT": "NIFTY IT",
+    "NSE:CNXAUTO": "NIFTY AUTO",
+    "NSE:CNXPHARMA": "NIFTY PHARMA",
+    "NSE:CNXMETAL": "NIFTY METAL"
+}
 
-def fetch_market_data():
+def fetch_tradingview_data():
     global cached_data
-    headers = {"User-Agent": "Mozilla/5.0"}
-    batch_size = 40 
+    
+    # TV Format: "NSE:RELIANCE"
+    tv_stocks = ["NSE:" + s for s in FO_STOCKS]
+    tv_indices = list(INDICES.keys())
+    
+    url = "https://scanner.tradingview.com/india/scan"
+    
+    payload_stocks = {
+        "symbols": {"tickers": tv_stocks},
+        "columns": ["name", "close", "change", "volume"]
+    }
+    
+    payload_indices = {
+        "symbols": {"tickers": tv_indices},
+        "columns": ["name", "close", "change"]
+    }
     
     while True:
         try:
-            all_stocks = []
-            all_indices = []
+            # 1. Fetch Stocks
+            res_stocks = requests.post(url, json=payload_stocks, timeout=10)
+            stock_data = res_stocks.json().get("data", [])
             
-            # 1. Fetch F&O Stocks (Batched)
-            for i in range(0, len(FO_STOCKS), batch_size):
-                batch = FO_STOCKS[i:i+batch_size]
-                symbols_str = ",".join([s + ".NS" for s in batch])
-                url = f"https://query2.finance.yahoo.com/v8/finance/spark?symbols={symbols_str}&range=1d"
-                
-                res = requests.get(url, headers=headers, timeout=10)
-                if res.status_code == 200:
-                    for stock in res.json().get('spark', {}).get('result', []):
-                        try:
-                            sym = stock.get('symbol', '').replace('.NS', '')
-                            meta = stock.get('response', [{}])[0].get('meta', {})
-                            ltp = meta.get('regularMarketPrice', 0.0)
-                            prev = meta.get('chartPreviousClose', 0.0)
-                            
-                            if ltp > 0 and prev > 0:
-                                chg_pct = ((ltp - prev) / prev) * 100
-                                all_stocks.append({"Symbol": sym, "LTP": round(ltp, 2), "Change_Percent": round(chg_pct, 2)})
-                        except: continue
-                time.sleep(0.5)
+            all_stocks = []
+            for item in stock_data:
+                d = item.get("d", [])
+                if len(d) >= 4:
+                    all_stocks.append({
+                        "Symbol": d[0],
+                        "LTP": round(d[1], 2) if d[1] else 0,
+                        "Change_Percent": round(d[2], 2) if d[2] else 0,
+                        "Volume": d[3] if d[3] else "N/A"
+                    })
+            
+            # 2. Fetch Indices
+            res_indices = requests.post(url, json=payload_indices, timeout=10)
+            idx_data = res_indices.json().get("data", [])
+            
+            all_indices = []
+            for item in idx_data:
+                ticker = item.get("s", "")
+                d = item.get("d", [])
+                if len(d) >= 3:
+                    all_indices.append({
+                        "Index": INDICES.get(ticker, d[0]),
+                        "LTP": round(d[1], 2) if d[1] else 0,
+                        "Change_Percent": round(d[2], 2) if d[2] else 0
+                    })
 
-            # 2. Fetch Sectoral Indices
-            idx_str = ",".join(INDICES.keys())
-            idx_url = f"https://query2.finance.yahoo.com/v8/finance/spark?symbols={idx_str}&range=1d"
-            idx_res = requests.get(idx_url, headers=headers, timeout=10)
-            if idx_res.status_code == 200:
-                for idx in idx_res.json().get('spark', {}).get('result', []):
-                    try:
-                        sym = idx.get('symbol', '')
-                        name = INDICES.get(sym, sym)
-                        meta = idx.get('response', [{}])[0].get('meta', {})
-                        ltp = meta.get('regularMarketPrice', 0.0)
-                        prev = meta.get('chartPreviousClose', 0.0)
-                        
-                        if ltp > 0 and prev > 0:
-                            chg_pct = ((ltp - prev) / prev) * 100
-                            all_indices.append({"Index": name, "LTP": round(ltp, 2), "Change_Percent": round(chg_pct, 2)})
-                    except: continue
-
-            # 3. Sort & Update Cache
+            # 3. Sort & Update Data
             if all_stocks:
                 sorted_stocks = sorted(all_stocks, key=lambda x: x['Change_Percent'], reverse=True)
                 cached_data = {
@@ -109,15 +116,19 @@ def fetch_market_data():
                         "top_losers": sorted(sorted_stocks[-20:], key=lambda x: x['Change_Percent'])
                     }
                 }
-                print(f"✅ Data Synced: {cached_data['timestamp']}")
-
+                print(f"✅ TV Data Synced at {cached_data['timestamp']}")
+            else:
+                cached_data["timestamp"] = "⚠️ Fetch Error. Retrying..."
+                
         except Exception as e:
-            print(f"⚠️ Fetch Error: {e}")
-            
-        time.sleep(120) # Update every 2 minutes
+            print(f"⚠️ TV Fetch Error: {e}")
+            if cached_data["status"] == "loading":
+                cached_data["timestamp"] = "Connection Error. Retrying..."
+                
+        time.sleep(60) # Super fast 1-minute updates!
 
-# Start the background data fetcher
-threading.Thread(target=fetch_market_data, daemon=True).start()
+# Start background thread
+threading.Thread(target=fetch_tradingview_data, daemon=True).start()
 
 @app.get("/api/live-data")
 def get_live_data():
